@@ -82,10 +82,10 @@ def init_db():
             db.executemany(
                 "INSERT INTO masters (name, color, initials) VALUES (?,?,?)",
                 [
-                    ("Аня Мороз",   "#7F77DD", "АМ"),
-                    ("Катя Власюк", "#1D9E75", "КВ"),
-                    ("Оля Петренко","#BA7517", "ОП"),
-                    ("Діана Сич",   "#D85A30", "ДС"),
+                    ("Аня Мороз",    "#7F77DD", "АМ"),
+                    ("Катя Власюк",  "#1D9E75", "КВ"),
+                    ("Оля Петренко", "#BA7517", "ОП"),
+                    ("Діана Сич",    "#D85A30", "ДС"),
                 ]
             )
             today = date.today().isoformat()
@@ -1136,7 +1136,10 @@ async function saveMasterSettings() {
   }
   // Create new / update existing
   for (const m of pendingMasters) {
-    const initials = m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() || '??';
+    const words = m.name.trim().split(/\s+/);
+    const initials = words.length >= 2
+      ? (words[0][0] + words[1][0]).toUpperCase()
+      : (words[0].slice(0,2)).toUpperCase() || '??';
     if (!m.id) {
       await fetch('/api/masters', {
         method: 'POST',
