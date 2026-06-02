@@ -147,6 +147,14 @@ def update_master(master_id: int, m: MasterIn):
                    (m.name, m.color, m.initials, master_id))
         return {"id": master_id, **m.dict()}
 
+@app.delete("/api/masters/{master_id}")
+def delete_master(master_id: int):
+    with get_db() as db:
+        db.execute("DELETE FROM appointments WHERE master_id=?", (master_id,))
+        db.execute("DELETE FROM breaks WHERE master_id=?", (master_id,))
+        db.execute("DELETE FROM masters WHERE id=?", (master_id,))
+        return {"ok": True}
+
 @app.get("/api/appointments")
 def list_appointments(date: str = None):
     with get_db() as db:
@@ -891,7 +899,7 @@ function showToast(msg) {
 let pendingMasters = [];
 
 function openSettingsModal() {
-  pendingMasters = masters.map(m => ({...m}));
+  pendingMasters = JSON.parse(JSON.stringify(masters));
   renderMasterEditList();
   document.getElementById('settingsOverlay').classList.remove('hidden');
 }
@@ -922,19 +930,27 @@ function addNewMasterRow() {
 }
 
 async function saveMasterSettings() {
-  // Save new/updated masters via API
+  // Delete removed masters
+  const currentIds = new Set(pendingMasters.filter(m=>m.id).map(m=>m.id));
+  for (const m of masters) {
+    if (!currentIds.has(m.id)) {
+      await fetch(`/api/masters/${m.id}`, { method: 'DELETE' });
+    }
+  }
+  // Create new / update existing
   for (const m of pendingMasters) {
+    const initials = m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() || '??';
     if (!m.id) {
       await fetch('/api/masters', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: m.name, color: m.color, initials: m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()})
+        body: JSON.stringify({name: m.name, color: m.color, initials})
       });
     } else {
       await fetch(`/api/masters/${m.id}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: m.name, color: m.color, initials: m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()})
+        body: JSON.stringify({name: m.name, color: m.color, initials})
       });
     }
   }
