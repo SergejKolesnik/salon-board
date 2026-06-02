@@ -3,111 +3,102 @@ Cosmo — розклад косметологічного кабінету
 Запуск: uvicorn main:app --reload
 """
 
-import sqlite3, json, hashlib, secrets
+import json, hashlib, secrets, os, urllib.request, urllib.error
 from datetime import date, datetime, timedelta
-from contextlib import contextmanager
 from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 
-# ─── БД ────────────────────────────────────────────────────────────────────────
+# ─── TURSO DB ──────────────────────────────────────────────────────────────────
 
-DB = "cosmo.db"
+TURSO_URL = os.environ.get('TURSO_URL', 'https://salon-board-sergejkolesnik.aws-eu-west-1.turso.io')
+TURSO_TOKEN = os.environ.get('TURSO_TOKEN', 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODA0MDgyMDksImlkIjoiMDE5ZTg4OTItZTYwMS03NWRmLWE1ZjQtNzZiN2Q5YzkyZTcyIiwicmlkIjoiZWQ0YmQxZTAtMmZmZS00MDZlLWEyZGUtYTkzN2E3YmZjODlhIn0.KrVUUpG7zyHB-lr-zONJp3jZLjgMcWyLE4eaD0GqdeqIFsEMZEsy-WPe1rEY4FoAlSrIPIYGDJY4i-WsL3BqCA')
 
-@contextmanager
-def get_db():
-    con = sqlite3.connect(DB)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL")
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
+def turso(sql: str, params=None):
+    """Execute single SQL statement, return rows list."""
+    stmt = {'sql': sql}
+    if params:
+        args = []
+        for p in params:
+            if p is None:
+                args.append({'type': 'null'})
+            elif isinstance(p, int):
+                args.append({'type': 'integer', 'value': str(p)})
+            elif isinstance(p, float):
+                args.append({'type': 'float', 'value': str(p)})
+            else:
+                args.append({'type': 'text', 'value': str(p)})
+        stmt['args'] = args
+    payload = json.dumps({'requests': [{'type': 'execute', 'stmt': stmt}, {'type': 'close'}]}).encode()
+    req = urllib.request.Request(
+        f'{TURSO_URL}/v2/pipeline', data=payload,
+        headers={'Authorization': f'Bearer {TURSO_TOKEN}', 'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req) as r:
+        data = json.load(r)
+    result = data['results'][0]['response']['result']
+    cols = [c['name'] for c in result['cols']]
+    return [dict(zip(cols, [v.get('value') for v in row])) for row in result['rows']]
+
+def turso_exec(sql: str, params=None):
+    """Execute and return lastInsertRowid."""
+    stmt = {'sql': sql}
+    if params:
+        args = []
+        for p in params:
+            if p is None:
+                args.append({'type': 'null'})
+            elif isinstance(p, int):
+                args.append({'type': 'integer', 'value': str(p)})
+            elif isinstance(p, float):
+                args.append({'type': 'float', 'value': str(p)})
+            else:
+                args.append({'type': 'text', 'value': str(p)})
+        stmt['args'] = args
+    payload = json.dumps({'requests': [{'type': 'execute', 'stmt': stmt}, {'type': 'close'}]}).encode()
+    req = urllib.request.Request(
+        f'{TURSO_URL}/v2/pipeline', data=payload,
+        headers={'Authorization': f'Bearer {TURSO_TOKEN}', 'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req) as r:
+        data = json.load(r)
+    return data['results'][0]['response']['result'].get('lastInsertRowid')
+
+def turso_batch(statements):
+    """Execute multiple SQL statements in one request."""
+    requests = [{'type': 'execute', 'stmt': {'sql': s}} for s in statements]
+    requests.append({'type': 'close'})
+    payload = json.dumps({'requests': requests}).encode()
+    req = urllib.request.Request(
+        f'{TURSO_URL}/v2/pipeline', data=payload,
+        headers={'Authorization': f'Bearer {TURSO_TOKEN}', 'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)
 
 def init_db():
-    with get_db() as db:
-        db.executescript("""
-        CREATE TABLE IF NOT EXISTS masters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            color TEXT NOT NULL DEFAULT '#7F77DD',
-            initials TEXT NOT NULL DEFAULT '??'
-        );
-
-        CREATE TABLE IF NOT EXISTS appointments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            master_id INTEGER NOT NULL REFERENCES masters(id),
-            client_name TEXT NOT NULL,
-            service TEXT NOT NULL,
-            appt_date TEXT NOT NULL,
-            start_time TEXT NOT NULL,
-            duration_min INTEGER NOT NULL DEFAULT 60,
-            notes TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS breaks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            master_id INTEGER NOT NULL REFERENCES masters(id),
-            break_date TEXT NOT NULL,
-            start_time TEXT NOT NULL,
-            end_time TEXT NOT NULL,
-            label TEXT DEFAULT 'Обід'
-        );
-
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS sessions (
-            token TEXT PRIMARY KEY,
-            role TEXT NOT NULL,
-            master_id INTEGER,
-            created_at TEXT DEFAULT (datetime('now'))
-        );
-        """)
-
-        # Default passwords if not set
-        for key, val in [('pwd_admin','admin123'), ('pwd_reception','reception123')]:
-            exists = db.execute("SELECT 1 FROM settings WHERE key=?", (key,)).fetchone()
-            if not exists:
-                db.execute("INSERT INTO settings (key,value) VALUES (?,?)", (key, val))
-
-        # Демо-дані якщо порожньо
-        count = db.execute("SELECT COUNT(*) FROM masters").fetchone()[0]
-        if count == 0:
-            db.executemany(
-                "INSERT INTO masters (name, color, initials) VALUES (?,?,?)",
-                [
-                    ("Аня Мороз",    "#7F77DD", "АМ"),
-                    ("Катя Власюк",  "#1D9E75", "КВ"),
-                    ("Оля Петренко", "#BA7517", "ОП"),
-                    ("Діана Сич",    "#D85A30", "ДС"),
-                ]
-            )
-            today = date.today().isoformat()
-            db.executemany(
-                "INSERT INTO appointments (master_id,client_name,service,appt_date,start_time,duration_min) VALUES (?,?,?,?,?,?)",
-                [
-                    (1,"Марина К.","Масаж обличчя", today,"09:00",60),
-                    (1,"Світлана О.","Брови",        today,"11:00",45),
-                    (1,"Олена Ж.","Ін'єкції",        today,"14:00",45),
-                    (2,"Лариса Н.","Чистка шкіри",  today,"10:00",60),
-                    (2,"Наталя В.","Ліфтинг",        today,"12:00",90),
-                    (3,"Тетяна Р.","Ботокс",         today,"09:00",60),
-                    (3,"Ірина М.","Мезотерапія",     today,"11:00",60),
-                    (4,"Вікторія Б.","Пілінг",       today,"10:00",60),
-                    (4,"Юлія Т.","Масаж",            today,"12:00",60),
-                    (4,"Галина С.","Чистка",         today,"14:00",60),
-                ]
-            )
-            db.executemany(
-                "INSERT INTO breaks (master_id,break_date,start_time,end_time,label) VALUES (?,?,?,?,?)",
-                [(i, today, "13:00","14:00","Обід") for i in range(1,5)]
-            )
+    turso_batch([
+        """CREATE TABLE IF NOT EXISTS masters (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#7F77DD', initials TEXT NOT NULL DEFAULT '??')""",
+        """CREATE TABLE IF NOT EXISTS appointments (id INTEGER PRIMARY KEY AUTOINCREMENT, master_id INTEGER NOT NULL, client_name TEXT NOT NULL, service TEXT NOT NULL, appt_date TEXT NOT NULL, start_time TEXT NOT NULL, duration_min INTEGER NOT NULL DEFAULT 60, notes TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')))""",
+        """CREATE TABLE IF NOT EXISTS breaks (id INTEGER PRIMARY KEY AUTOINCREMENT, master_id INTEGER NOT NULL, break_date TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, label TEXT DEFAULT 'Обід')""",
+        """CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, role TEXT NOT NULL, master_id INTEGER, created_at TEXT DEFAULT (datetime('now')))""",
+        "INSERT OR IGNORE INTO settings (key,value) VALUES ('pwd_admin','admin123')",
+        "INSERT OR IGNORE INTO settings (key,value) VALUES ('pwd_reception','reception123')",
+    ])
+    rows = turso("SELECT COUNT(*) as cnt FROM masters")
+    if int(rows[0]['cnt']) == 0:
+        today = date.today().isoformat()
+        for name, color, initials in [("Аня Мороз","#7F77DD","АМ"),("Катя Власюк","#1D9E75","КВ"),("Оля Петренко","#BA7517","ОП"),("Діана Сич","#D85A30","ДС")]:
+            turso_exec("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", [name,color,initials])
+        for mid, name, svc, t, dur in [(1,"Марина К.","Масаж обличчя","09:00",60),(1,"Світлана О.","Брови","11:00",45),(1,"Олена Ж.","Ін'єкції","14:00",45),(2,"Лариса Н.","Чистка шкіри","10:00",60),(2,"Наталя В.","Ліфтинг","12:00",90),(3,"Тетяна Р.","Ботокс","09:00",60),(3,"Ірина М.","Мезотерапія","11:00",60),(4,"Вікторія Б.","Пілінг","10:00",60),(4,"Юлія Т.","Масаж","12:00",60),(4,"Галина С.","Чистка","14:00",60)]:
+            turso_exec("INSERT INTO appointments (master_id,client_name,service,appt_date,start_time,duration_min) VALUES (?,?,?,?,?,?)", [mid,name,svc,today,t,dur])
+        for i in range(1,5):
+            turso_exec("INSERT INTO breaks (master_id,break_date,start_time,end_time,label) VALUES (?,?,?,?,?)", [i,today,"13:00","14:00","Обід"])
 
 
 # ─── API MODELS ────────────────────────────────────────────────────────────────
@@ -143,22 +134,22 @@ init_db()
 # ─── AUTH HELPERS ──────────────────────────────────────────────────────────────
 
 def get_setting(key: str) -> str:
-    with get_db() as db:
-        row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-        return row[0] if row else ""
+    rows = turso("SELECT value FROM settings WHERE key=?", [key])
+    return rows[0]['value'] if rows else ""
 
 def create_session(role: str, master_id: int = None) -> str:
     token = secrets.token_hex(32)
-    with get_db() as db:
-        db.execute("INSERT INTO sessions (token,role,master_id) VALUES (?,?,?)", (token, role, master_id))
+    turso_exec("INSERT INTO sessions (token,role,master_id) VALUES (?,?,?)", [token, role, master_id])
     return token
 
 def get_session(token: str = Cookie(default=None)):
     if not token:
         return None
-    with get_db() as db:
-        row = db.execute("SELECT role, master_id FROM sessions WHERE token=?", (token,)).fetchone()
-        return dict(row) if row else None
+    rows = turso("SELECT role, master_id FROM sessions WHERE token=?", [token])
+    if not rows:
+        return None
+    r = rows[0]
+    return {'role': r['role'], 'master_id': int(r['master_id']) if r['master_id'] else None}
 
 def require_auth(token: str = Cookie(default=None)):
     sess = get_session(token)
@@ -177,104 +168,80 @@ def require_edit(token: str = Cookie(default=None)):
 
 @app.get("/api/masters")
 def list_masters():
-    with get_db() as db:
-        rows = db.execute("SELECT * FROM masters ORDER BY id").fetchall()
-        return [dict(r) for r in rows]
+    rows = turso("SELECT * FROM masters ORDER BY id")
+    return [{**r, 'id': int(r['id'])} for r in rows]
 
 @app.post("/api/masters", status_code=201)
 def create_master(m: MasterIn):
-    with get_db() as db:
-        cur = db.execute("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", (m.name, m.color, m.initials))
-        return {"id": cur.lastrowid, **m.dict()}
+    rid = turso_exec("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", [m.name, m.color, m.initials])
+    return {"id": int(rid), **m.dict()}
 
 @app.put("/api/masters/{master_id}")
 def update_master(master_id: int, m: MasterIn):
-    with get_db() as db:
-        existing = db.execute("SELECT * FROM masters WHERE id=?", (master_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "Майстра не знайдено")
-        db.execute("UPDATE masters SET name=?,color=?,initials=? WHERE id=?",
-                   (m.name, m.color, m.initials, master_id))
-        return {"id": master_id, **m.dict()}
+    rows = turso("SELECT id FROM masters WHERE id=?", [master_id])
+    if not rows:
+        raise HTTPException(404, "Майстра не знайдено")
+    turso_exec("UPDATE masters SET name=?,color=?,initials=? WHERE id=?", [m.name, m.color, m.initials, master_id])
+    return {"id": master_id, **m.dict()}
 
 @app.delete("/api/masters/{master_id}")
 def delete_master(master_id: int):
-    with get_db() as db:
-        db.execute("DELETE FROM appointments WHERE master_id=?", (master_id,))
-        db.execute("DELETE FROM breaks WHERE master_id=?", (master_id,))
-        db.execute("DELETE FROM masters WHERE id=?", (master_id,))
-        return {"ok": True}
+    turso_exec("DELETE FROM appointments WHERE master_id=?", [master_id])
+    turso_exec("DELETE FROM breaks WHERE master_id=?", [master_id])
+    turso_exec("DELETE FROM masters WHERE id=?", [master_id])
+    return {"ok": True}
 
 @app.get("/api/appointments")
 def list_appointments(date: str = None):
-    with get_db() as db:
-        if date:
-            rows = db.execute(
-                "SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.appt_date=? ORDER BY a.start_time",
-                (date,)
-            ).fetchall()
-        else:
-            rows = db.execute(
-                "SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id ORDER BY a.appt_date, a.start_time"
-            ).fetchall()
-        return [dict(r) for r in rows]
+    if date:
+        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.appt_date=? ORDER BY a.start_time", [date])
+    else:
+        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id ORDER BY a.appt_date, a.start_time")
+    return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id']), 'duration_min': int(r['duration_min'])} for r in rows]
 
 @app.post("/api/appointments", status_code=201)
 def create_appointment(a: AppointmentIn):
-    # Перевірка перетину
-    with get_db() as db:
-        existing = db.execute(
-            "SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?",
-            (a.master_id, a.appt_date)
-        ).fetchall()
-
-        def to_min(t): h,m = map(int, t.split(":")); return h*60+m
-        new_start = to_min(a.start_time)
-        new_end   = new_start + a.duration_min
-
-        for row in existing:
-            s = to_min(row["start_time"])
-            e = s + row["duration_min"]
-            if new_start < e and new_end > s:
-                raise HTTPException(400, "Цей час вже зайнятий у майстра")
-
-        cur = db.execute(
-            "INSERT INTO appointments (master_id,client_name,service,appt_date,start_time,duration_min,notes) VALUES (?,?,?,?,?,?,?)",
-            (a.master_id, a.client_name, a.service, a.appt_date, a.start_time, a.duration_min, a.notes)
-        )
-        row = db.execute("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.id=?", (cur.lastrowid,)).fetchone()
-        return dict(row)
+    def to_min(t): h,m = map(int, t.split(":")); return h*60+m
+    existing = turso("SELECT start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?", [a.master_id, a.appt_date])
+    new_start = to_min(a.start_time)
+    new_end = new_start + a.duration_min
+    for row in existing:
+        s = to_min(row["start_time"])
+        e = s + int(row["duration_min"])
+        if new_start < e and new_end > s:
+            raise HTTPException(400, "Цей час вже зайнятий у майстра")
+    rid = turso_exec("INSERT INTO appointments (master_id,client_name,service,appt_date,start_time,duration_min,notes) VALUES (?,?,?,?,?,?,?)",
+                    [a.master_id, a.client_name, a.service, a.appt_date, a.start_time, a.duration_min, a.notes])
+    rows = turso("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.id=?", [rid])
+    r = rows[0]
+    return {**r, 'id': int(r['id']), 'master_id': int(r['master_id']), 'duration_min': int(r['duration_min'])}
 
 @app.put("/api/appointments/{appt_id}")
 def update_appointment(appt_id: int, a: AppointmentUpdate):
-    with get_db() as db:
-        existing = db.execute("SELECT * FROM appointments WHERE id=?", (appt_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "Запис не знайдено")
-        data = dict(existing)
-        for k, v in a.dict(exclude_none=True).items():
-            data[k] = v
-        db.execute(
-            "UPDATE appointments SET client_name=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=? WHERE id=?",
-            (data["client_name"], data["service"], data["appt_date"], data["start_time"], data["duration_min"], data["notes"], appt_id)
-        )
-        row = db.execute("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.id=?", (appt_id,)).fetchone()
-        return dict(row)
+    rows = turso("SELECT * FROM appointments WHERE id=?", [appt_id])
+    if not rows:
+        raise HTTPException(404, "Запис не знайдено")
+    data = rows[0]
+    for k, v in a.dict(exclude_none=True).items():
+        data[k] = v
+    turso_exec("UPDATE appointments SET client_name=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=? WHERE id=?",
+              [data["client_name"], data["service"], data["appt_date"], data["start_time"], data["duration_min"], data["notes"], appt_id])
+    rows2 = turso("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.id=?", [appt_id])
+    r = rows2[0]
+    return {**r, 'id': int(r['id']), 'master_id': int(r['master_id']), 'duration_min': int(r['duration_min'])}
 
 @app.delete("/api/appointments/{appt_id}")
 def delete_appointment(appt_id: int):
-    with get_db() as db:
-        db.execute("DELETE FROM appointments WHERE id=?", (appt_id,))
-        return {"ok": True}
+    turso_exec("DELETE FROM appointments WHERE id=?", [appt_id])
+    return {"ok": True}
 
 @app.get("/api/breaks")
 def list_breaks(date: str = None):
-    with get_db() as db:
-        if date:
-            rows = db.execute("SELECT * FROM breaks WHERE break_date=?", (date,)).fetchall()
-        else:
-            rows = db.execute("SELECT * FROM breaks").fetchall()
-        return [dict(r) for r in rows]
+    if date:
+        rows = turso("SELECT * FROM breaks WHERE break_date=?", [date])
+    else:
+        rows = turso("SELECT * FROM breaks")
+    return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
 
 
 # ─── FRONTEND ──────────────────────────────────────────────────────────────────
@@ -1245,9 +1212,8 @@ def login(data: LoginIn, response: Response):
         return {"role": "reception", "master_id": None}
     elif data.master_id:
         # Check master password: stored as pwd_master_{id}
-        with get_db() as db:
-            master = db.execute("SELECT * FROM masters WHERE id=?", (data.master_id,)).fetchone()
-        if not master:
+        master_rows = turso("SELECT * FROM masters WHERE id=?", [data.master_id])
+        if not master_rows:
             raise HTTPException(400, "Майстра не знайдено")
         pwd_master = get_setting(f"pwd_master_{data.master_id}")
         if not pwd_master or data.password != pwd_master:
@@ -1287,16 +1253,14 @@ def set_password(data: PasswordIn, sess=Depends(require_auth)):
         key = f"pwd_master_{data.master_id}"
     else:
         raise HTTPException(400, "Невірні параметри")
-    with get_db() as db:
-        db.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", (key, data.password))
+    turso_exec("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [key, data.password])
     return {"ok": True}
 
 @app.get("/api/settings/passwords")
 def get_passwords(sess=Depends(require_auth)):
     if sess["role"] != "admin":
         raise HTTPException(403, "Тільки адмін")
-    with get_db() as db:
-        rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'pwd_%'").fetchall()
+    rows = turso("SELECT key, value FROM settings WHERE key LIKE 'pwd_%'")
     return {r["key"]: r["value"] for r in rows}
 
 
