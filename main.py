@@ -254,6 +254,136 @@ def list_breaks(date: str = None):
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
 
 
+
+@app.get("/api/services")
+def list_services():
+    rows = turso("SELECT * FROM services ORDER BY sort_order, id")
+    return [{**r, 'id': int(r['id']), 'sort_order': int(r['sort_order'] or 0)} for r in rows]
+
+class ServiceIn(BaseModel):
+    name: str
+    sort_order: int = 0
+
+@app.post("/api/services", status_code=201)
+def create_service(s: ServiceIn):
+    rid = turso_exec("INSERT INTO services (name, sort_order) VALUES (?,?)", [s.name, s.sort_order])
+    return {"id": int(rid), "name": s.name, "sort_order": s.sort_order}
+
+@app.put("/api/services/{svc_id}")
+def update_service(svc_id: int, s: ServiceIn):
+    turso_exec("UPDATE services SET name=?, sort_order=? WHERE id=?", [s.name, s.sort_order, svc_id])
+    return {"id": svc_id, "name": s.name, "sort_order": s.sort_order}
+
+@app.delete("/api/services/{svc_id}")
+def delete_service(svc_id: int):
+    turso_exec("DELETE FROM services WHERE id=?", [svc_id])
+    return {"ok": True}
+
+@app.get("/api/appointments/range")
+def appointments_range(master_id: int, from_date: str = None, to_date: str = None):
+    if from_date and to_date:
+        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date>=? AND a.appt_date<=? ORDER BY a.appt_date, a.start_time", [master_id, from_date, to_date])
+    else:
+        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? ORDER BY a.appt_date, a.start_time", [master_id])
+    return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id']), 'duration_min': int(r['duration_min'])} for r in rows]
+
+@app.get("/api/breaks/range")
+def breaks_range(master_id: int, from_date: str = None, to_date: str = None):
+    if from_date and to_date:
+        rows = turso("SELECT * FROM breaks WHERE master_id=? AND break_date>=? AND break_date<=?", [master_id, from_date, to_date])
+    else:
+        rows = turso("SELECT * FROM breaks WHERE master_id=?", [master_id])
+    return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
+
+# ─── AUTH ──────────────────────────────────────────────────────────────────────
+
+def get_setting(key: str) -> str:
+    rows = turso("SELECT value FROM settings WHERE key=?", [key])
+    return rows[0]['value'] if rows else ""
+
+def create_session(role: str, master_id: int = None) -> str:
+    token = secrets.token_hex(32)
+    turso_exec("INSERT INTO sessions (token,role,master_id) VALUES (?,?,?)", [token, role, master_id])
+    return token
+
+def get_session(token: str = Cookie(default=None)):
+    if not token:
+        return None
+    rows = turso("SELECT role, master_id FROM sessions WHERE token=?", [token])
+    if not rows:
+        return None
+    r = rows[0]
+    return {'role': r['role'], 'master_id': int(r['master_id']) if r['master_id'] else None}
+
+def require_auth(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    return sess
+
+class LoginIn(BaseModel):
+    password: str
+    master_id: Optional[int] = None
+
+@app.post("/api/login")
+def login(data: LoginIn, response: Response):
+    pwd_admin = get_setting("pwd_admin")
+    if data.password == pwd_admin:
+        token = create_session("admin")
+        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=True)
+        return {"role": "admin", "master_id": None}
+    raise HTTPException(401, "Невірний пароль")
+
+@app.post("/api/logout")
+def logout(response: Response):
+    response.delete_cookie("token")
+    return {"ok": True}
+
+@app.get("/api/me")
+def me(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        return {"role": "guest"}
+    return sess
+
+class PasswordIn(BaseModel):
+    role: str
+    master_id: Optional[int] = None
+    password: str
+
+@app.put("/api/settings/password")
+def set_password(data: PasswordIn, sess=Depends(require_auth)):
+    if sess["role"] != "admin":
+        raise HTTPException(403, "Тільки адмін може змінювати паролі")
+    if data.role == "admin":
+        key = "pwd_admin"
+    elif data.role == "reception":
+        key = "pwd_reception"
+    elif data.role == "master" and data.master_id:
+        key = f"pwd_master_{data.master_id}"
+    else:
+        raise HTTPException(400, "Невірні параметри")
+    turso_exec("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [key, data.password])
+    return {"ok": True}
+
+@app.get("/api/settings/passwords")
+def get_passwords(sess=Depends(require_auth)):
+    if sess["role"] != "admin":
+        raise HTTPException(403, "Тільки адмін")
+    rows = turso("SELECT key, value FROM settings WHERE key LIKE 'pwd_%'")
+    return {r["key"]: r["value"] for r in rows}
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return LOGIN_HTML
+
+@app.get("/", response_class=HTMLResponse)
+def index(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        return RedirectResponse("/login")
+    return HTML
+
 # ─── FRONTEND ──────────────────────────────────────────────────────────────────
 
 
