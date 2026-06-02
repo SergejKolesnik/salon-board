@@ -360,7 +360,7 @@ async function doLogin() {
       err.textContent = data.detail || 'Невірний пароль';
     }
   } catch(e) {
-    err.textContent = 'Помилка з'єднання';
+    err.textContent = "Помилка з'єднання";
   }
 }
 init();
@@ -1234,11 +1234,11 @@ def login(data: LoginIn, response: Response):
 
     if data.password == pwd_admin:
         token = create_session("admin")
-        response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400*30)
+        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=True)
         return {"role": "admin", "master_id": None}
     elif data.password == pwd_reception:
         token = create_session("reception")
-        response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400*30)
+        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=True)
         return {"role": "reception", "master_id": None}
     elif data.master_id:
         # Check master password: stored as pwd_master_{id}
@@ -1250,7 +1250,7 @@ def login(data: LoginIn, response: Response):
         if not pwd_master or data.password != pwd_master:
             raise HTTPException(401, "Невірний пароль")
         token = create_session("master", data.master_id)
-        response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400*30)
+        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=True)
         return {"role": "master", "master_id": data.master_id}
     else:
         raise HTTPException(401, "Невірний пароль")
