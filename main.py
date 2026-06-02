@@ -266,8 +266,8 @@ h1,h2,.sidebar-label,.date-label,.grid-header-cell,.m-tab,.topbar-title { font-f
 /* LAYOUT */
 .app { display: flex; flex-direction: column; height: 100vh; }
 .topbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 0 16px; height: 52px;
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 24px; height: 72px;
   background: var(--surface); border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -434,19 +434,25 @@ h1,h2,.sidebar-label,.date-label,.grid-header-cell,.m-tab,.topbar-title { font-f
 <div class="app">
 
 <div class="topbar">
-  <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="showAllMasters()" title="Усі майстри">
-  <svg width="32" height="32" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M60 15 C40 15 25 30 25 50 C25 65 33 75 45 82 L42 95 L60 88 L78 95 L75 82 C87 75 95 65 95 50 C95 30 80 15 60 15Z" stroke="#00C8B4" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M45 48 C45 40 52 35 60 35 C68 35 75 40 75 48" stroke="#00C8B4" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    <circle cx="60" cy="55" r="8" fill="none" stroke="#00C8B4" stroke-width="3.5"/>
+  <div style="display:flex;align-items:center;gap:0;cursor:pointer;height:56px" onclick="showAllMasters()" title="Усі майстри">
+  <svg height="56" viewBox="0 0 260 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- figure silhouette -->
+    <circle cx="22" cy="10" r="5" fill="#00C8B4"/>
+    <path d="M18 17 C14 22 12 30 15 36 L13 52 L22 48 L31 52 L29 36 C32 30 30 22 26 17 Z" fill="none" stroke="#00C8B4" stroke-width="2" stroke-linejoin="round"/>
+    <!-- B letterform -->
+    <path d="M38 8 L38 56 M38 8 C52 8 60 12 60 22 C60 30 52 33 38 33 M38 33 C54 33 63 37 63 47 C63 57 54 56 38 56" stroke="#00C8B4" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- swoosh under -->
+    <path d="M36 62 Q100 72 200 58" stroke="#00C8B4" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <!-- BODY BALANCE text -->
+    <text x="72" y="36" font-family="Montserrat,sans-serif" font-size="20" font-weight="800" fill="#E4E4E7" letter-spacing="2">BODY BALANCE</text>
+    <text x="73" y="52" font-family="Inter,sans-serif" font-size="9" font-weight="500" fill="#00C8B4" letter-spacing="3.5">BEAUTY STUDIO</text>
   </svg>
-  <div>
-    <div style="font-family:'Montserrat',sans-serif;font-size:15px;font-weight:800;color:#E4E4E7;letter-spacing:.5px;line-height:1">BODY BALANCE</div>
-    <div style="font-family:'Inter',sans-serif;font-size:10px;color:#00C8B4;letter-spacing:1.5px;text-transform:uppercase;line-height:1.4">розклад</div>
-  </div>
 </div>
   <div class="spacer"></div>
-  <span class="desktop-only" style="font-size:12px;color:var(--muted)">косметологічний кабінет</span>
+  <div class="desktop-only" style="text-align:right;line-height:1.4">
+  <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:600;color:#E4E4E7;letter-spacing:.3px">Краса — це мистецтво.</div>
+  <div style="font-family:'Inter',sans-serif;font-size:11px;color:#00C8B4;letter-spacing:.5px">Ми створюємо його щодня</div>
+</div>
 </div>
 
 <!-- DESKTOP -->
