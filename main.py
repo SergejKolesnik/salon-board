@@ -426,10 +426,11 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   <div class="content">
     <div class="date-nav">
       <button onclick="changeDate(-1)">‹</button>
-      <button class="today-btn" onclick="goToday()">Сьогодні</button>
+      <input type="date" id="datePicker" onchange="pickDate(this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--surface);color:var(--text);cursor:pointer;">
       <button onclick="changeDate(1)">›</button>
+      <button class="today-btn" onclick="goToday()">Сьогодні</button>
       <span class="date-label" id="dateLabel"></span>
-      <button class="add-btn" onclick="openAddModal()">+ Новий запис</button>
+      <button class="add-btn" onclick="openAddModal()">+ Новий запис клієнта</button>
     </div>
     <div class="schedule-wrap">
       <div class="schedule-grid" id="scheduleGrid"></div>
@@ -579,7 +580,9 @@ function renderAll() {
   renderSidebar();
   renderGrid();
   renderMobile();
-  document.getElementById('dateLabel').textContent = formatDateUa(isoDate(currentDate));
+  const iso = isoDate(currentDate);
+  document.getElementById('dateLabel').textContent = formatDateUa(iso);
+  document.getElementById('datePicker').value = iso;
 }
 
 function renderSidebar() {
@@ -688,6 +691,12 @@ function changeDate(delta) {
 }
 function goToday() {
   currentDate = new Date();
+  loadData();
+}
+function pickDate(val) {
+  if (!val) return;
+  const [y,m,d] = val.split('-').map(Number);
+  currentDate = new Date(y, m-1, d);
   loadData();
 }
 function toggleMaster(id) {
