@@ -3,11 +3,11 @@ Cosmo — розклад косметологічного кабінету
 Запуск: uvicorn main:app --reload
 """
 
-import sqlite3, json
+import sqlite3, json, hashlib, secrets
 from datetime import date, datetime, timedelta
 from contextlib import contextmanager
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -56,7 +56,25 @@ def init_db():
             end_time TEXT NOT NULL,
             label TEXT DEFAULT 'Обід'
         );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            role TEXT NOT NULL,
+            master_id INTEGER,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
         """)
+
+        # Default passwords if not set
+        for key, val in [('pwd_admin','admin123'), ('pwd_reception','reception123')]:
+            exists = db.execute("SELECT 1 FROM settings WHERE key=?", (key,)).fetchone()
+            if not exists:
+                db.execute("INSERT INTO settings (key,value) VALUES (?,?)", (key, val))
 
         # Демо-дані якщо порожньо
         count = db.execute("SELECT COUNT(*) FROM masters").fetchone()[0]
@@ -121,6 +139,38 @@ class MasterIn(BaseModel):
 
 app = FastAPI(title="Cosmo Schedule")
 init_db()
+
+# ─── AUTH HELPERS ──────────────────────────────────────────────────────────────
+
+def get_setting(key: str) -> str:
+    with get_db() as db:
+        row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row[0] if row else ""
+
+def create_session(role: str, master_id: int = None) -> str:
+    token = secrets.token_hex(32)
+    with get_db() as db:
+        db.execute("INSERT INTO sessions (token,role,master_id) VALUES (?,?,?)", (token, role, master_id))
+    return token
+
+def get_session(token: str = Cookie(default=None)):
+    if not token:
+        return None
+    with get_db() as db:
+        row = db.execute("SELECT role, master_id FROM sessions WHERE token=?", (token,)).fetchone()
+        return dict(row) if row else None
+
+def require_auth(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    return sess
+
+def require_edit(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess or sess["role"] not in ("admin", "reception"):
+        raise HTTPException(403, "Недостатньо прав")
+    return sess
 
 
 # ─── REST API ──────────────────────────────────────────────────────────────────
@@ -228,6 +278,96 @@ def list_breaks(date: str = None):
 
 
 # ─── FRONTEND ──────────────────────────────────────────────────────────────────
+
+
+LOGIN_HTML = r"""<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Body Balance — Вхід</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#121214;color:#E4E4E7;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#1E1E22;border:1px solid #2E2E36;border-radius:16px;padding:36px 32px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.logo{text-align:center;margin-bottom:28px}
+.logo img{height:60px;width:auto}
+h2{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:700;margin-bottom:20px;color:#E4E4E7;text-align:center}
+.role-tabs{display:flex;gap:6px;margin-bottom:20px;background:#121214;border-radius:10px;padding:4px}
+.role-tab{flex:1;padding:8px;text-align:center;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;color:#71717A;font-family:'Montserrat',sans-serif;transition:all .15s}
+.role-tab.active{background:#1E1E22;color:#00C8B4;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;font-weight:600;color:#A1A1AA;margin-bottom:5px}
+.field select,.field input{width:100%;padding:10px 12px;background:#121214;border:1px solid #2E2E36;border-radius:8px;color:#E4E4E7;font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border-color .15s}
+.field select:focus,.field input:focus{border-color:#00C8B4;box-shadow:0 0 0 2px rgba(0,200,180,.15)}
+.btn{width:100%;padding:12px;background:#00C8B4;color:#121214;border:none;border-radius:8px;font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-top:4px}
+.btn:hover{opacity:.88}
+.err{color:#F87171;font-size:12px;margin-top:10px;text-align:center;min-height:18px}
+.master-field{display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo"><img src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTUzIDEwODAiPgogIDxkZWZzPgogICAgPHN0eWxlPgogICAgICAuY2xzLTEgewogICAgICAgIGZpbGw6ICMwZGUwZDY7CiAgICAgIH0KCiAgICAgIC5jbHMtMiB7CiAgICAgICAgZmlsbDogI2UzZTRlODsKICAgICAgfQogICAgPC9zdHlsZT4KICA8L2RlZnM+CiAgPHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMzg0LjIzLDIxNC45OWMtMTAuODEtNS41NS0xMC44MSw0Mi4zMS0xMC44MSw0Mi4zMS0xMC44MSwyNS45NS0yMS42MiwyOC4xMS0yMS42MiwyOC4xMS0xMi45Ny04LjY1LTEwLjgxLTQ3LjU3LTEwLjgxLTQ3LjU3LTE1LjE0LTU2LjIyLDQzLjI0LTU4LjM4LDQzLjI0LTU4LjM4LDAsMC0yMS42Mi04LjY1LTM4LjkyLDYuNDktMjMuMDEsMjAuMTQtMTcuMyw2Mi43LTguNjUsODguNjUsOC42NSwyNS45NSwyMS42MiwxNS4xNCwyMS42MiwxNS4xNC0xMi45NywxNy4zLTI1Ljk1LDEyLjk3LTI1Ljk1LDEyLjk3LTI4LjExLTYuNDktMzguOTItMi4xNi0zOC45Mi0yLjE2LTMwLjI3LDEyLjk3LTIxLjYyLDY3LjAzLTE1LjE0LDg4LjY1LDYuNDksMjEuNjIsMzIuNDMsOTIuOTcsMzIuNDMsOTIuOTctOC42NSw2LjQ5LTE5LjQ2LDI1Ljk1LTE1LjE0LDQxLjA4LDQuMzIsMTUuMTQsMjUuOTUsMzIuNDMsMzYuNzYsMjEuNjIsMTAuODEtMTAuODEtOC42NS00Ny41Ny04LjY1LTQ3LjU3bC0yNC40Ni02Mi42NmMtMS4xNi0zLjQxLTIuMTYtNi44Ni0yLjk4LTEwLjM3LTMuMjEtMTMuNjctMjIuMjktNzEuODMtMTEuNDgtOTcuNzgsMTEuMDktMjYuNjMsNDcuNTctMTcuMyw0Ny41Ny0xNy4zLDQxLjA4LDguNjUsNDkuNzMtNDkuNzMsNDkuNzMtNDkuNzMsMTAuODEtMTAuODEsMTIuOTctMzguOTIsMi4xNi00NC40N1pNMzIxLjUzLDUyMS4wOGMwLDEwLjgxLDAsMTUuMTQtNi40OSwxMi45N3MtMTQuNDQtMTQuOTktMTIuOTctMjMuNzhjMi4xNi0xMi45NywxMC44MS0yMS42MiwxMC44MS0yMS42MiwwLDAsOC42NSwyMS42Miw4LjY1LDMyLjQzWiIvPgogIDxwYXRoIGNsYXNzPSJjbHMtMSIgZD0iTTM4My44NSwyNjkuMjlzLTQuMzIsMzAuMjctMjMuNzgsNjQuODZjLTE5LjQ2LDM0LjU5LTQ2LjQ5LDgzLjI0LTQ2LjQ5LDE1MC4yN2w0LjMyLTQuMzIsNC4zMi00LjMyczIuMTYtMTIuOTcsOC42NS00My4yNGM2LjQ5LTMwLjI3LDI3LjAzLTYzLjc4LDQxLjA4LTkyLjk3LDEyLjIzLTI1LjQsMTQuMDUtNTIuOTcsMTEuODktNzAuMjdaIi8+CiAgPHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMzMxLjY1LDg3OC42NHM1Ni45MS0xMDYuNzUsNzIuMDQtMTM5LjE4YzE1LjE0LTMyLjQzLDQwLTExMS4zNSwzMi40My0xNjAtNi44NS00NC4wNC0yMC41NC03Ni43Ni01Mi45Ny04OS43My0zMS4xNi0xMi40Ny02MS42Mi05LjczLTcwLjI3LTEuMDhsLTIuMTYtNi40OXMyNS4wMy0yMS42Miw4MC42Mi01LjQxYzU1LjU5LDE2LjIyLDcxLjgxLDg2LjQ5LDcxLjgxLDExNC41OSwwLDMxLjMtMy44OSwxMDAuMTgtNDMuMjQsMTYyLjE2LTQwLjU1LDYzLjg2LTg4LjI2LDEyNS4xMy04OC4yNiwxMjUuMTNaIi8+CiAgPHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMzIyLjIzLDQ3Ny45M3MtNS40MS0yOS4xOSwxOC4zOC00MGMyMy43OC0xMC44MSw4Ny41Ny0xMS44OSw5Ny4zLTY5LjE5LDExLjQ2LTY3LjQ5LTQ5LjExLTYzLjUxLTQ5LjExLTYzLjUxLDAsMCw1NC41OS0yOC41Nyw3MS44MSwyOS45OSwxMC44MSwzNi43Ni0xMi45Nyw4Ni40OS03MS4zNSw5OS40Ni01My4wNywxMS43OS01NC4wNSwxNS4xNC02Ny4wMyw0My4yNFoiLz4KICA8cGF0aCBjbGFzcz0iY2xzLTEiIGQ9Ik04MDYsNzM4YzU4LDQwLDExNy4yOSw1OS4xOCwxNDQsNjksMTY2LDYxLDMyMiw3NCwzMjIsNzQsNTQwLDcyLDY4MC4wMi0xMDYuODksNjgwLjAyLTEwNi44OS0yMzAuOTgsMTU2LjExLTc5Ni45Nyw1My4wMS05MDIuMDIsMzAuODktMzgtOC0xMTUtMjUtMjMyLTgzIi8+CiAgPHBhdGggY2xhc3M9ImNscy0xIiBkPSJNODIzLjEsNzU1LjA0Yy0yNi4zMywyNy43NS02MS4yOSw0OS4wMy0xMDQuODksNjMuODMtMzcuNDMsMTIuNDktNzYuOTIsMTguNzMtMTE4LjQ2LDE4LjczLTI3LjE1LDAtNTMuMjctNi4wMi03OC4zNi0xOC4wNC0zMi4wOC0xNS4yNi00OC4xMy0zNi4zMS00OC4xMy02My4xNCwwLTMwLjk4LDEzLjE2LTU2LjQzLDM5LjQ5LTc2LjMyLDExLjkyLTguNzgsMjQuMjctMTUuMzcsMzcuMDItMTkuNzcsMTIuNzUtNC4zOSwyNi4xMi03LjA1LDQwLjExLTcuOTgsNi45OS0xOC41LDE1LjczLTQwLjAxLDI2LjIyLTY0LjUzLDEwLjQ5LTI0LjUxLDIxLjYyLTQ2LjAyLDMxLjkxLTY3LjMsMy4yOS02LjQ3LDgtMTYsMTQtMjYsMTAuMjktMTcuMTYsMjAtMzEsMjQtMzUsMTcuNTEtMTcuNTEsMzYtMTUsMzYtMTUsMCwwLTIuOTksMi4yNC0xMy40OCwxNS43Ni0zLjU0LDQuNTUtNi44OCw5LjI3LTkuOTksMTQuMTMtMzUuODMsNTUuOTUtNTYuMDcsMTA2LjM5LTg3LjY4LDE3Ny45NCw5Mi41NSwxLjg1LDE2MS40NCwyNS4yMiwyMDYuNyw3MC4wOCwxMy4xNi0xOS44OCwxOS43NC0zOC4xNiwxOS43NC01NC44MSwwLTI5LjE0LTE3LjQ5LTUyLjA0LTUyLjQ1LTY4LjY5LTE1LjE2LTYuOTctNTAuMDEtMTcuNDgtNzYuODQtMjIuNC0yMS4yMi0zLjg5LTI3LTUtMjctNSwwLDAsOC45NC0zLjE5LDIxLTcsMTktNiwyNi04LDM3LTEyLDQ1LjY0LTE2LjYsNzEuNjEtMjkuMDIsOTMuOTctNTIuODIsOS40Ni05LjcxLDE0LjE5LTE4LjUsMTQuMTktMjYuMzcsMC0xNi42NS0xOS4xMy0yOS4xNC01Ny4zOC0zNy40Ny0yNS45MS01LjU1LTUyLjY2LTguMzMtODAuMjEtOC4zMy03My42NCwwLTE0MC45OSwxMC45Mi0yMDUuNTcsNDAuOTgtMi40Ny45My0xNiw5LTE2LDksMCwwLDguMzMtMTEuMzMsMTUtMTgsOS05LDE5LTE3LDMzLTI0LDQyLjc4LTE5LjQzLDc3LjcyLTI4LjEsMTQzLjk1LTI4LjEsMzkuNDksMCw3Ni4wOSw0LjE2LDEwOS44MywxMi40OSw1Mi42NSwxMi40OSw3OC45OCwzMi4zOCw3OC45OCw1OS42NywwLDIyLjItMTYuMDQsNDIuMzMtNDguMTMsNjAuMzctMjMuNDUsMTMuNDItNDguMzQsMjIuNjctNzQuNjYsMjcuNzUsMjkuMiw3LjQxLDU0LjMsMTguMjgsNzUuMjcsMzIuNjEsMjguNzksMTkuNDMsNDMuMTksNDIuNzksNDMuMTksNzAuMDgsMCwyMi4yLTEwLjA4LDQ2LjAzLTMwLjIzLDcxLjQ3TTU2MC44Nyw4MDguNDdjLS44Ny4wNS0zLjg3LTkuNDYtMy44Ny0yMS45NSwwLTIwLjgyLDQuNDktNTYuNjksMjUuNDYtMTE0LjA1LTU0LjcxLDEwLjE4LTgyLjA2LDM4LjYzLTgyLjA2LDg1LjM0LDAsMjAuODIsMTIuNTQsMzcuNDcsMzcuNjQsNDkuOTYsMTkuNzQsOS43MSw0MC4zMSwxNC41Nyw2MS43LDE0LjU3LDkxLjMyLDAsMTYwLjIxLTI4LjIxLDIwNi43LTg0LjY1LTIzLjA0LTIxLjc0LTUyLjA0LTM4Ljg2LTg3LTUxLjM1LTMyLjUtMTEuNTYtNjUuMi0xNy4zNS05OC4xLTE3LjM1aC04Ljk1Yy0zLjA4LDAtNi4wNy4yNC04Ljk1LjY5LTI0LjY4LDU4Ljc1LTQyLjQ0LDExOC40OC00Mi40NCwxMzguODMiLz4KICA8Zz4KICAgIDxwYXRoIGNsYXNzPSJjbHMtMiIgZD0iTTg5Ni4yOCw2MjUuMDF2LTY0Ljg1aDM0LjY1YzguOTYsMCwxNS41NiwxLjU5LDE5LjgzLDQuNzcsNC4yNiwzLjE4LDYuMzksNy4yNCw2LjM5LDEyLjE4LDAsMy4yNy0uOTEsNi4xOS0yLjczLDguNzUtMS44MiwyLjU2LTQuNDYsNC41OS03LjkyLDYuMDctMy40NiwxLjQ4LTcuNzIsMi4yMi0xMi43OSwyLjIybDEuODUtNWM1LjA2LDAsOS40My43MSwxMy4xMSwyLjEzLDMuNjcsMS40Miw2LjUyLDMuNDcsOC41Miw2LjE2LDIuMDEsMi42OSwzLjAxLDUuOTIsMy4wMSw5LjY4LDAsNS42Mi0yLjMzLDEwLTYuOTksMTMuMTYtNC42NiwzLjE1LTExLjQ3LDQuNzItMjAuNDMsNC43MmgtMzYuNVpNOTE3Ljc4LDYwOS43MmgxMy4xNmMyLjQxLDAsNC4yMi0uNDMsNS40Mi0xLjMsMS4yLS44NiwxLjgxLTIuMTMsMS44MS0zLjhzLS42LTIuOTMtMS44MS0zLjhjLTEuMi0uODYtMy4wMS0xLjMtNS40Mi0xLjNoLTE0LjY0di0xNC40NWgxMS42N2MyLjQ3LDAsNC4yOC0uNDIsNS40Mi0xLjI1LDEuMTQtLjgzLDEuNzEtMi4wMiwxLjcxLTMuNTdzLS41Ny0yLjgxLTEuNzEtMy42MWMtMS4xNC0uOC0yLjk1LTEuMi01LjQyLTEuMmgtMTAuMTl2MzQuMjhaIi8+CiAgICA8cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xMDI5Ljc4LDYyNi40OWMtNS4zMSwwLTEwLjIxLS44My0xNC42OC0yLjUtNC40OC0xLjY3LTguMzUtNC4wMy0xMS42My03LjA5LTMuMjctMy4wNi01LjgyLTYuNjUtNy42NC0xMC43OS0xLjgyLTQuMTQtMi43My04LjY1LTIuNzMtMTMuNTNzLjkxLTkuNDYsMi43My0xMy41N2MxLjgyLTQuMTEsNC4zNy03LjY5LDcuNjQtMTAuNzUsMy4yNy0zLjA2LDcuMTUtNS40MiwxMS42My03LjA5LDQuNDgtMS42Nyw5LjM0LTIuNSwxNC41OS0yLjVzMTAuMTkuODMsMTQuNjQsMi41YzQuNDUsMS42Nyw4LjMxLDQuMDMsMTEuNTgsNy4wOSwzLjI3LDMuMDYsNS44Miw2LjY0LDcuNjQsMTAuNzUsMS44Miw0LjExLDIuNzMsOC42MywyLjczLDEzLjU3cy0uOTEsOS4zOS0yLjczLDEzLjUzYy0xLjgyLDQuMTQtNC4zNyw3Ljc0LTcuNjQsMTAuNzktMy4yNywzLjA2LTcuMTMsNS40Mi0xMS41OCw3LjA5LTQuNDUsMS42Ny05LjMsMi41LTE0LjU0LDIuNVpNMTAyOS42OSw2MDguOGMyLjA0LDAsMy45NC0uMzcsNS43LTEuMTEsMS43Ni0uNzQsMy4zLTEuODEsNC42My0zLjIsMS4zMy0xLjM5LDIuMzYtMy4wOSwzLjEtNS4xLjc0LTIuMDEsMS4xMS00LjI4LDEuMTEtNi44MXMtLjM3LTQuOC0xLjExLTYuODFjLS43NC0yLjAxLTEuNzgtMy43MS0zLjEtNS4xLTEuMzMtMS4zOS0yLjg3LTIuNDUtNC42My0zLjItMS43Ni0uNzQtMy42Ni0xLjExLTUuNy0xLjExcy0zLjk0LjM3LTUuNywxLjExLTMuMywxLjgxLTQuNjMsMy4yYy0xLjMzLDEuMzktMi4zNiwzLjA5LTMuMSw1LjEtLjc0LDIuMDEtMS4xMSw0LjI4LTEuMTEsNi44MXMuMzcsNC44LDEuMTEsNi44MWMuNzQsMi4wMSwxLjc3LDMuNzEsMy4xLDUuMSwxLjMzLDEuMzksMi44NywyLjQ2LDQuNjMsMy4yczMuNjYsMS4xMSw1LjcsMS4xMVoiLz4KICAgIDxwYXRoIGNsYXNzPSJjbHMtMiIgZD0iTTExMDIuMDQsNjI1LjAxdi02NC44NWgzMS45NmM3LjIzLDAsMTMuNTksMS4zMSwxOS4wOCwzLjk0LDUuNSwyLjYzLDkuNzksNi4zNSwxMi44OCwxMS4xNiwzLjA5LDQuODIsNC42MywxMC41Niw0LjYzLDE3LjIzcy0xLjU0LDEyLjUyLTQuNjMsMTcuMzdjLTMuMDksNC44NS03LjM4LDguNTktMTIuODgsMTEuMjEtNS41LDIuNjMtMTEuODYsMy45NC0xOS4wOCwzLjk0aC0zMS45NlpNMTEyMy45MSw2MDcuOTZoOS4xN2MzLjA5LDAsNS43OS0uNTksOC4xMS0xLjc2LDIuMzItMS4xNyw0LjEyLTIuOTIsNS40Mi01LjIzLDEuMy0yLjMyLDEuOTUtNS4xNCwxLjk1LTguNDhzLS42NS02LjA1LTEuOTUtOC4zNGMtMS4zLTIuMjgtMy4xLTQuMDEtNS40Mi01LjE5LTIuMzItMS4xNy01LjAyLTEuNzYtOC4xMS0xLjc2aC05LjE3djMwLjc2WiIvPgogICAgPHBhdGggY2xhc3M9ImNscy0yIiBkPSJNMTIyMC4yNSw2MjUuMDF2LTI4LjQ0bDUsMTMuMDYtMjkuNDYtNDkuNDdoMjMuMDdsMTkuOTIsMzMuODFoLTEzLjQzbDIwLjEtMzMuODFoMjEuMTJsLTI5LjI3LDQ5LjQ3LDQuODItMTMuMDZ2MjguNDRoLTIxLjg2WiIvPgogICAgPHBhdGggY2xhc3M9ImNscy0yIiBkPSJNMTM1Mi43Myw2MjUuMDF2LTY0Ljg1aDM0LjY1YzguOTYsMCwxNS41NiwxLjU5LDE5LjgzLDQuNzcsNC4yNiwzLjE4LDYuMzksNy4yNCw2LjM5LDEyLjE4LDAsMy4yNy0uOTEsNi4xOS0yLjczLDguNzUtMS44MiwyLjU2LTQuNDYsNC41OS03LjkyLDYuMDctMy40NiwxLjQ4LTcuNzIsMi4yMi0xMi43OSwyLjIybDEuODUtNWM1LjA2LDAsOS40My43MSwxMy4xMSwyLjEzLDMuNjcsMS40Miw2LjUyLDMuNDcsOC41Miw2LjE2LDIuMDEsMi42OSwzLjAxLDUuOTIsMy4wMSw5LjY4LDAsNS42Mi0yLjMzLDEwLTYuOTksMTMuMTYtNC42NiwzLjE1LTExLjQ3LDQuNzItMjAuNDMsNC43MmgtMzYuNVpNMTM3NC4yMiw2MDkuNzJoMTMuMTZjMi40MSwwLDQuMjItLjQzLDUuNDItMS4zLDEuMi0uODYsMS44MS0yLjEzLDEuODEtMy44cy0uNi0yLjkzLTEuODEtMy44Yy0xLjItLjg2LTMuMDEtMS4zLTUuNDItMS4zaC0xNC42NHYtMTQuNDVoMTEuNjdjMi40NywwLDQuMjgtLjQyLDUuNDItMS4yNSwxLjE0LS44MywxLjcxLTIuMDIsMS43MS0zLjU3cy0uNTctMi44MS0xLjcxLTMuNjFjLTEuMTQtLjgtMi45NS0xLjItNS40Mi0xLjJoLTEwLjE5djM0LjI4WiIvPgogICAgPHBhdGggY2xhc3M9ImNscy0yIiBkPSJNMTQ0NS4wOSw2MjUuMDFsMjguMzUtNjQuODVoMjEuNDlsMjguMzUsNjQuODVoLTIyLjYxbC0yMC45NC01NC40N2g4LjUybC0yMC45NCw1NC40N2gtMjIuMjNaTTE0NjEuOTYsNjEzLjcxbDUuNTYtMTUuNzVoMjkuODNsNS41NiwxNS43NWgtNDAuOTVaIi8+CiAgICA8cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xNTU0LjYsNjI1LjAxdi02NC44NWgyMS44NnY0Ny45aDI5LjI4djE2Ljk1aC01MS4xNFoiLz4KICAgIDxwYXRoIGNsYXNzPSJjbHMtMiIgZD0iTTE2MzMuNDQsNjI1LjAxbDI4LjM1LTY0Ljg1aDIxLjQ5bDI4LjM1LDY0Ljg1aC0yMi42MWwtMjAuOTQtNTQuNDdoOC41MmwtMjAuOTQsNTQuNDdoLTIyLjIzWk0xNjUwLjMsNjEzLjcxbDUuNTYtMTUuNzVoMjkuODNsNS41NiwxNS43NWgtNDAuOTVaIi8+CiAgICA8cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xNzQyLjk0LDYyNS4wMXYtNjQuODVoMTcuOTdsMzIuOTgsMzkuNDdoLTguMzR2LTM5LjQ3aDIxLjMxdjY0Ljg1aC0xNy45N2wtMzIuOTgtMzkuNDdoOC4zNHYzOS40N2gtMjEuMzFaIi8+CiAgICA8cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xODc4Ljc1LDYyNi40OWMtNS4xOSwwLTkuOTktLjgyLTE0LjQxLTIuNDYtNC40Mi0xLjY0LTguMjUtMy45Ny0xMS40OS03LTMuMjQtMy4wMi01Ljc2LTYuNjEtNy41NS0xMC43NS0xLjc5LTQuMTQtMi42OS04LjcxLTIuNjktMTMuNzFzLjg5LTkuNTcsMi42OS0xMy43MWMxLjc5LTQuMTQsNC4zMS03LjcyLDcuNTUtMTAuNzUsMy4yNC0zLjAzLDcuMDctNS4zNiwxMS40OS02Ljk5LDQuNDItMS42NCw5LjIyLTIuNDYsMTQuNDEtMi40Niw2LjM2LDAsMTIsMS4xMSwxNi45MSwzLjMzczguOTcsNS40NCwxMi4xOCw5LjYzbC0xMy44LDEyLjMyYy0xLjkyLTIuNDEtNC4wMy00LjI4LTYuMzUtNS42LTIuMzItMS4zMy00LjkzLTEuOTktNy44My0xLjk5LTIuMjksMC00LjM1LjM3LTYuMjEsMS4xMS0xLjg1Ljc0LTMuNDQsMS44Mi00Ljc3LDMuMjQtMS4zMywxLjQyLTIuMzYsMy4xNC0zLjEsNS4xNC0uNzQsMi4wMS0xLjExLDQuMjUtMS4xMSw2Ljcycy4zNyw0LjcxLDEuMTEsNi43MmMuNzQsMi4wMSwxLjc3LDMuNzIsMy4xLDUuMTQsMS4zMywxLjQyLDIuOTIsMi41LDQuNzcsMy4yNCwxLjg1Ljc0LDMuOTIsMS4xMSw2LjIxLDEuMTEsMi45LDAsNS41MS0uNjYsNy44My0xLjk5LDIuMzItMS4zMyw0LjQzLTMuMiw2LjM1LTUuNjFsMTMuOCwxMi4zMmMtMy4yMSw0LjE0LTcuMjcsNy4zMy0xMi4xOCw5LjU5cy0xMC41NSwzLjM4LTE2LjkxLDMuMzhaIi8+CiAgICA8cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xOTYzLjQzLDYwOC41MmgzMi40M3YxNi40OWgtNTMuOTJ2LTY0Ljg1aDUyLjcxdjE2LjQ5aC0zMS4yMnYzMS44N1pNMTk2MS45NCw1ODQuMjVoMjguOTF2MTUuNzVoLTI4Ljkxdi0xNS43NVoiLz4KICA8L2c+Cjwvc3ZnPg==" style="height:60px;width:auto" alt="Body Balance"></div>
+  <h2>Вхід у систему</h2>
+  <div class="role-tabs">
+    <div class="role-tab active" onclick="setRole('admin')">Адмін</div>
+    <div class="role-tab" onclick="setRole('reception')">Рецепція</div>
+    <div class="role-tab" onclick="setRole('master')">Майстер</div>
+  </div>
+  <div class="master-field field" id="masterField">
+    <label>Оберіть майстра</label>
+    <select id="masterSelect"></select>
+  </div>
+  <div class="field">
+    <label>Пароль</label>
+    <input type="password" id="pwd" placeholder="Введіть пароль" onkeydown="if(event.key==='Enter')doLogin()">
+  </div>
+  <button class="btn" onclick="doLogin()">Увійти</button>
+  <div class="err" id="errMsg"></div>
+</div>
+<script>
+let currentRole = 'admin';
+async function init() {
+  const res = await fetch('/api/masters');
+  const masters = await res.json();
+  const sel = document.getElementById('masterSelect');
+  sel.innerHTML = masters.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+}
+function setRole(role) {
+  currentRole = role;
+  document.querySelectorAll('.role-tab').forEach((t,i)=>{
+    t.classList.toggle('active', ['admin','reception','master'][i]===role);
+  });
+  document.getElementById('masterField').style.display = role==='master' ? 'block' : 'none';
+}
+async function doLogin() {
+  const pwd = document.getElementById('pwd').value;
+  const masterId = currentRole==='master' ? parseInt(document.getElementById('masterSelect').value) : null;
+  const err = document.getElementById('errMsg');
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({password: pwd, master_id: masterId})
+    });
+    if (res.ok) {
+      window.location.href = '/';
+    } else {
+      const data = await res.json();
+      err.textContent = data.detail || 'Невірний пароль';
+    }
+  } catch(e) {
+    err.textContent = 'Помилка з'єднання';
+  }
+}
+init();
+</script>
+</body>
+</html>
+"""
 
 HTML = r"""<!DOCTYPE html>
 <html lang="uk">
@@ -442,6 +582,10 @@ h1,h2,.sidebar-label,.date-label,.grid-header-cell,.m-tab,.topbar-title { font-f
   <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:600;color:#E4E4E7;letter-spacing:.3px">Краса — це мистецтво.</div>
   <div style="font-family:'Inter',sans-serif;font-size:11px;color:#00C8B4;letter-spacing:.5px">Ми створюємо його щодня</div>
 </div>
+<div style="display:flex;align-items:center;gap:8px;margin-left:12px">
+  <span id="roleBadge" style="display:none;font-size:11px;font-weight:700;font-family:'Montserrat',sans-serif;background:rgba(0,200,180,.15);color:#00C8B4;padding:3px 10px;border-radius:20px;border:1px solid rgba(0,200,180,.3)"></span>
+  <button id="logoutBtn" onclick="doLogout()" style="display:none;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);border-radius:7px;padding:5px 12px;color:#F87171;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;cursor:pointer">Вийти</button>
+</div>
 </div>
 
 <!-- DESKTOP -->
@@ -456,7 +600,7 @@ h1,h2,.sidebar-label,.date-label,.grid-header-cell,.m-tab,.topbar-title { font-f
       <div id="masterList"></div>
     </div>
     <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
-      <div onclick="openSettingsModal()" style="display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:8px;cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <div id="settingsBtn" onclick="openSettingsModalFull()" style="display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:8px;cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
         <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:16px">⚙️</div>
         <span style="font-size:13px;font-weight:500;color:var(--muted);font-family:'Montserrat',sans-serif">Налаштування</span>
       </div>
@@ -553,12 +697,30 @@ h1,h2,.sidebar-label,.date-label,.grid-header-cell,.m-tab,.topbar-title { font-f
 <!-- MODAL: SETTINGS / MASTERS EDITOR -->
 <div class="overlay hidden" id="settingsOverlay">
   <div class="modal" style="max-width:520px;max-height:80vh;overflow-y:auto">
-    <h2 style="font-family:'Montserrat',sans-serif;margin-bottom:16px">⚙️ Налаштування майстрів</h2>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button onclick="showSettingsTab('masters')" id="tabMasters" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--accent);color:#121214;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer">👥 Майстри</button>
+      <button onclick="showSettingsTab('passwords')" id="tabPasswords" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;cursor:pointer">🔑 Паролі</button>
+    </div>
+    <div id="settingsTabMasters">
+    <h2 style="font-family:'Montserrat',sans-serif;margin-bottom:16px">👥 Майстри</h2>
     <div id="masterEditList" style="margin-bottom:16px"></div>
     <button class="btn" style="width:100%;margin-bottom:8px;border-style:dashed;color:var(--accent);border-color:var(--accent)" onclick="addNewMasterRow()">+ Додати майстра</button>
+    </div>
+    <div id="settingsTabPasswords" style="display:none">
+    <h2 style="font-family:'Montserrat',sans-serif;margin-bottom:16px">🔑 Паролі входу</h2>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Пароль адміна</label>
+      <input id="pwdAdmin" type="text" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Пароль рецепції</label>
+      <input id="pwdReception" type="text" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px">
+    </div>
+    <div id="masterPasswordsList" style="margin-bottom:12px"></div>
+    </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeSettings()">Закрити</button>
-      <button class="btn btn-primary" onclick="saveMasterSettings()">Зберегти зміни</button>
+      <button class="btn btn-primary" onclick="saveAllSettings()">Зберегти зміни</button>
     </div>
   </div>
 </div>
@@ -608,16 +770,52 @@ function lighten(hex) {
 
 // ── FETCH ──────────────────────────────────────────────────────────────
 
+let currentRole = 'guest';
+let currentMasterId = null;
+
 async function loadAll() {
   const dateStr = isoDate(currentDate);
-  [masters, appointments, breaks] = await Promise.all([
+  const [me, mastersData, apptsData, breaksData] = await Promise.all([
+    fetch('/api/me').then(r=>r.json()),
     fetch('/api/masters').then(r=>r.json()),
     fetch(`/api/appointments?date=${dateStr}`).then(r=>r.json()),
     fetch(`/api/breaks?date=${dateStr}`).then(r=>r.json()),
   ]);
-  if (visibleMasters.size === 0) masters.forEach(m => visibleMasters.add(m.id));
+  currentRole = me.role || 'guest';
+  currentMasterId = me.master_id || null;
+  masters = mastersData;
+  appointments = apptsData;
+  breaks = breaksData;
+
+  // Master sees only themselves by default
+  if (currentRole === 'master' && currentMasterId) {
+    visibleMasters = new Set([currentMasterId]);
+  } else if (visibleMasters.size === 0) {
+    masters.forEach(m => visibleMasters.add(m.id));
+  }
   if (!mobileMasterId && masters.length) mobileMasterId = masters[0].id;
+  applyRoleUI();
   renderAll();
+}
+
+function applyRoleUI() {
+  const canEdit = currentRole === 'admin' || currentRole === 'reception';
+  // Hide add button for masters
+  document.querySelectorAll('.add-btn, .m-fab').forEach(el => {
+    el.style.display = canEdit ? '' : 'none';
+  });
+  // Hide settings for non-admins
+  const settingsBtn = document.getElementById('settingsBtn');
+  if (settingsBtn) settingsBtn.style.display = currentRole === 'admin' ? '' : 'none';
+  // Show logout button always
+  document.getElementById('logoutBtn').style.display = '';
+  // Show role badge
+  const badge = document.getElementById('roleBadge');
+  if (badge) {
+    const labels = {admin:'Адмін', reception:'Рецепція', master:'Майстер'};
+    badge.textContent = labels[currentRole] || '';
+    badge.style.display = currentRole !== 'guest' ? '' : 'none';
+  }
 }
 
 async function loadData() {
@@ -791,6 +989,7 @@ function openAddModal() {
 }
 
 function openAddOnSlot(date, time, masterId) {
+  if (currentRole !== 'admin' && currentRole !== 'reception') return;
   openAddModal();
   document.getElementById('fDate').value = date;
   document.getElementById('fTime').value = time;
@@ -830,7 +1029,10 @@ function openDetail(id) {
     <div class="detail-row"><span class="dl">Час</span><span class="dv">${a.start_time}, ${a.duration_min} хв</span></div>
     ${a.notes ? `<div class="detail-row"><span class="dl">Нотатки</span><span class="dv">${a.notes}</span></div>` : ''}
   `;
-  document.getElementById('detailEditBtn').onclick = () => openEditModal(a);
+  const editBtn = document.getElementById('detailEditBtn');
+  const canEdit = currentRole === 'admin' || currentRole === 'reception';
+  editBtn.style.display = canEdit ? '' : 'none';
+  editBtn.onclick = () => openEditModal(a);
   document.getElementById('detailOverlay').classList.remove('hidden');
 }
 
@@ -956,6 +1158,62 @@ async function saveMasterSettings() {
 
 document.getElementById('settingsOverlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeSettings(); });
 
+async function doLogout() {
+  await fetch('/api/logout', {method:'POST'});
+  window.location.href = '/login';
+}
+
+function showSettingsTab(tab) {
+  document.getElementById('settingsTabMasters').style.display = tab==='masters' ? '' : 'none';
+  document.getElementById('settingsTabPasswords').style.display = tab==='passwords' ? '' : 'none';
+  document.getElementById('tabMasters').style.background = tab==='masters' ? 'var(--accent)' : 'transparent';
+  document.getElementById('tabMasters').style.color = tab==='masters' ? '#121214' : 'var(--muted)';
+  document.getElementById('tabMasters').style.border = tab==='masters' ? 'none' : '1px solid var(--border)';
+  document.getElementById('tabPasswords').style.background = tab==='passwords' ? 'var(--accent)' : 'transparent';
+  document.getElementById('tabPasswords').style.color = tab==='passwords' ? '#121214' : 'var(--muted)';
+  document.getElementById('tabPasswords').style.border = tab==='passwords' ? 'none' : '1px solid var(--border)';
+}
+
+async function openSettingsModalFull() {
+  pendingMasters = JSON.parse(JSON.stringify(masters));
+  renderMasterEditList();
+  // Load passwords
+  try {
+    const res = await fetch('/api/settings/passwords');
+    if (res.ok) {
+      const pwds = await res.json();
+      document.getElementById('pwdAdmin').value = pwds.pwd_admin || '';
+      document.getElementById('pwdReception').value = pwds.pwd_reception || '';
+      // Master passwords
+      const mlist = document.getElementById('masterPasswordsList');
+      mlist.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">Паролі майстрів</div>' +
+        masters.map(m => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <div style="width:28px;height:28px;border-radius:50%;background:rgba(0,200,180,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#00C8B4;flex-shrink:0">${m.initials}</div>
+          <span style="font-size:13px;min-width:100px;color:var(--text)">${m.name}</span>
+          <input type="text" id="pwd_master_${m.id}" value="${pwds['pwd_master_'+m.id]||''}" placeholder="Пароль..." style="flex:1;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px">
+        </div>`).join('');
+    }
+  } catch(e) {}
+  document.getElementById('settingsOverlay').classList.remove('hidden');
+}
+
+async function saveAllSettings() {
+  // Save masters
+  await saveMasterSettings();
+  // Save passwords
+  const pwdAdmin = document.getElementById('pwdAdmin').value.trim();
+  const pwdReception = document.getElementById('pwdReception').value.trim();
+  if (pwdAdmin) await fetch('/api/settings/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role:'admin', password:pwdAdmin})});
+  if (pwdReception) await fetch('/api/settings/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role:'reception', password:pwdReception})});
+  for (const m of masters) {
+    const input = document.getElementById(`pwd_master_${m.id}`);
+    if (input && input.value.trim()) {
+      await fetch('/api/settings/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role:'master', master_id:m.id, password:input.value.trim()})});
+    }
+  }
+  showToast('Все збережено!');
+}
+
 // ── INIT ───────────────────────────────────────────────────────────────
 loadAll();
 </script>
@@ -963,6 +1221,89 @@ loadAll();
 </html>
 """
 
+# ─── AUTH API ──────────────────────────────────────────────────────────────────
+
+class LoginIn(BaseModel):
+    password: str
+    master_id: Optional[int] = None
+
+@app.post("/api/login")
+def login(data: LoginIn, response: Response):
+    pwd_admin = get_setting("pwd_admin")
+    pwd_reception = get_setting("pwd_reception")
+
+    if data.password == pwd_admin:
+        token = create_session("admin")
+        response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400*30)
+        return {"role": "admin", "master_id": None}
+    elif data.password == pwd_reception:
+        token = create_session("reception")
+        response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400*30)
+        return {"role": "reception", "master_id": None}
+    elif data.master_id:
+        # Check master password: stored as pwd_master_{id}
+        with get_db() as db:
+            master = db.execute("SELECT * FROM masters WHERE id=?", (data.master_id,)).fetchone()
+        if not master:
+            raise HTTPException(400, "Майстра не знайдено")
+        pwd_master = get_setting(f"pwd_master_{data.master_id}")
+        if not pwd_master or data.password != pwd_master:
+            raise HTTPException(401, "Невірний пароль")
+        token = create_session("master", data.master_id)
+        response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400*30)
+        return {"role": "master", "master_id": data.master_id}
+    else:
+        raise HTTPException(401, "Невірний пароль")
+
+@app.post("/api/logout")
+def logout(response: Response):
+    response.delete_cookie("token")
+    return {"ok": True}
+
+@app.get("/api/me")
+def me(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        return {"role": "guest"}
+    return sess
+
+class PasswordIn(BaseModel):
+    role: str
+    master_id: Optional[int] = None
+    password: str
+
+@app.put("/api/settings/password")
+def set_password(data: PasswordIn, sess=Depends(require_auth)):
+    if sess["role"] != "admin":
+        raise HTTPException(403, "Тільки адмін може змінювати паролі")
+    if data.role == "admin":
+        key = "pwd_admin"
+    elif data.role == "reception":
+        key = "pwd_reception"
+    elif data.role == "master" and data.master_id:
+        key = f"pwd_master_{data.master_id}"
+    else:
+        raise HTTPException(400, "Невірні параметри")
+    with get_db() as db:
+        db.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", (key, data.password))
+    return {"ok": True}
+
+@app.get("/api/settings/passwords")
+def get_passwords(sess=Depends(require_auth)):
+    if sess["role"] != "admin":
+        raise HTTPException(403, "Тільки адмін")
+    with get_db() as db:
+        rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'pwd_%'").fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return LOGIN_HTML
+
 @app.get("/", response_class=HTMLResponse)
-def index():
+def index(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        return RedirectResponse("/login")
     return HTML
