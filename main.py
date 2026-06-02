@@ -137,6 +137,16 @@ def create_master(m: MasterIn):
         cur = db.execute("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", (m.name, m.color, m.initials))
         return {"id": cur.lastrowid, **m.dict()}
 
+@app.put("/api/masters/{master_id}")
+def update_master(master_id: int, m: MasterIn):
+    with get_db() as db:
+        existing = db.execute("SELECT * FROM masters WHERE id=?", (master_id,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "Майстра не знайдено")
+        db.execute("UPDATE masters SET name=?,color=?,initials=? WHERE id=?",
+                   (m.name, m.color, m.initials, master_id))
+        return {"id": master_id, **m.dict()}
+
 @app.get("/api/appointments")
 def list_appointments(date: str = None):
     with get_db() as db:
@@ -218,10 +228,11 @@ HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cosmo — розклад</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --font: 'Nunito', sans-serif;
+  --font-head: 'Montserrat', sans-serif;
+  --font: 'Inter', sans-serif;
   --bg: #121214;
   --surface: #1E1E22;
   --surface2: #222227;
@@ -229,9 +240,9 @@ HTML = r"""<!DOCTYPE html>
   --text: #E4E4E7;
   --muted: #A1A1AA;
   --hint: #71717A;
-  --accent: #5D45DB;
-  --accent-light: rgba(93,69,219,0.18);
-  --accent-text: #A78BFA;
+  --accent: #00C8B4;
+  --accent-light: rgba(0,200,180,0.15);
+  --accent-text: #00E5CE;
   --danger: #F87171;
   --danger-light: rgba(248,113,113,0.15);
   --success: #34D399;
@@ -242,6 +253,7 @@ HTML = r"""<!DOCTYPE html>
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; }
+h1,h2,.sidebar-label,.date-label,.grid-header-cell,.m-tab,.topbar-title { font-family: var(--font-head); }
 
 /* LAYOUT */
 .app { display: flex; flex-direction: column; height: 100vh; }
@@ -290,11 +302,11 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   transition: background .12s;
 }
 .date-nav button:hover { background: var(--bg); }
-.date-nav .today-btn { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 0 12px rgba(93,69,219,.4); }
+.date-nav .today-btn { background: var(--accent); color: #121214; border-color: var(--accent); box-shadow: 0 0 14px rgba(0,200,180,.45); font-family: var(--font-head); font-weight: 700; }
 .date-label { font-size: 15px; font-weight: 700; min-width: 160px; }
 .add-btn {
   margin-left: auto;
-  background: var(--accent); color: #fff; border: none;
+  background: var(--accent); color: #121214; border: none; font-family: var(--font-head); font-weight: 700;
   border-radius: var(--radius-sm); padding: 7px 14px;
   cursor: pointer; font-family: var(--font); font-size: 13px; font-weight: 600;
   display: flex; align-items: center; gap: 5px; transition: opacity .12s;
@@ -311,7 +323,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   position: sticky; top: 0; background: var(--surface); z-index: 2;
 }
 .grid-header-cell .av { margin: 0 auto 4px; }
-.time-col { font-size: 11px; color: var(--hint); text-align: right; padding: 0 8px 0 0; border-right: 1px solid var(--border); display: flex; align-items: flex-start; padding-top: 6px; }
+.time-col { font-size: 13px; color: var(--hint); text-align: right; padding: 0 8px 0 0; border-right: 1px solid var(--border); display: flex; align-items: flex-start; padding-top: 6px; }
 .slot {
   border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
   min-height: 52px; position: relative; padding: 3px;
@@ -332,7 +344,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   box-shadow: var(--shadow);
 }
 .appt:hover { filter: brightness(1.1); box-shadow: 0 6px 20px rgba(0,0,0,.6); }
-.appt .aname { font-size: 12px; font-weight: 700; }
+.appt .aname { font-size: 14px; font-weight: 700; font-family: var(--font-head); }
 .appt .asvc { font-size: 11px; opacity: .75; }
 .appt .adur { font-size: 10px; opacity: .6; }
 
@@ -357,7 +369,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   background: var(--bg); color: var(--text); outline: none;
   transition: border-color .12s;
 }
-.form-row input:focus, .form-row select:focus, .form-row textarea:focus { border-color: var(--accent); }
+.form-row input:focus, .form-row select:focus, .form-row textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,200,180,.2); }
 .form-row textarea { resize: vertical; min-height: 60px; }
 .form-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modal-footer { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
@@ -382,7 +394,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent;
   flex-shrink: 0;
 }
-.m-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.m-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-family: var(--font-head); }
 .m-list { flex: 1; overflow-y: auto; padding: 12px; }
 .m-slot { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
 .m-time { font-size: 12px; color: var(--hint); min-width: 40px; padding-top: 6px; }
@@ -392,7 +404,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .m-card .mc-dur { font-size: 11px; opacity: .6; }
 .m-empty { font-size: 12px; color: var(--hint); font-style: italic; padding: 6px 10px; }
 .m-fab-wrap { padding: 10px 12px; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
-.m-fab { width: 100%; padding: 11px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-family: var(--font); font-size: 14px; font-weight: 700; cursor: pointer; }
+.m-fab { width: 100%; padding: 11px; background: var(--accent); color: #121214; border: none; border-radius: var(--radius); font-family: var(--font); font-size: 14px; font-weight: 700; cursor: pointer; }
 
 /* TOAST */
 .toast {
@@ -414,7 +426,17 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 <div class="app">
 
 <div class="topbar">
-  <h1 style="font-weight:800;color:#E4E4E7;letter-spacing:-.5px">cosmo<span style="color:#7C3AED;font-size:22px">.</span></h1>
+  <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="showAllMasters()" title="Усі майстри">
+  <svg width="32" height="32" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M60 15 C40 15 25 30 25 50 C25 65 33 75 45 82 L42 95 L60 88 L78 95 L75 82 C87 75 95 65 95 50 C95 30 80 15 60 15Z" stroke="#00C8B4" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M45 48 C45 40 52 35 60 35 C68 35 75 40 75 48" stroke="#00C8B4" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <circle cx="60" cy="55" r="8" fill="none" stroke="#00C8B4" stroke-width="3.5"/>
+  </svg>
+  <div>
+    <div style="font-family:'Montserrat',sans-serif;font-size:15px;font-weight:800;color:#E4E4E7;letter-spacing:.5px;line-height:1">BODY BALANCE</div>
+    <div style="font-family:'Inter',sans-serif;font-size:10px;color:#00C8B4;letter-spacing:1.5px;text-transform:uppercase;line-height:1.4">розклад</div>
+  </div>
+</div>
   <div class="spacer"></div>
   <span class="desktop-only" style="font-size:12px;color:var(--muted)">косметологічний кабінет</span>
 </div>
@@ -423,8 +445,18 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 <div class="main">
   <aside class="sidebar">
     <div class="sidebar-section">
-      <div class="sidebar-label">Майстри</div>
+      <div class="sidebar-label" style="font-family:'Montserrat',sans-serif">Майстри</div>
+      <div id="allMastersChip" onclick="showAllMasters()" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;margin-bottom:4px;background:var(--accent-light);border:1px solid rgba(0,200,180,.3)">
+        <div style="width:28px;height:28px;border-radius:50%;background:rgba(0,200,180,.2);display:flex;align-items:center;justify-content:center;font-size:14px">⊞</div>
+        <span style="font-size:13px;font-weight:600;color:var(--accent);font-family:'Montserrat',sans-serif">Усі майстри</span>
+      </div>
       <div id="masterList"></div>
+    </div>
+    <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
+      <div onclick="openSettingsModal()" style="display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:8px;cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:16px">⚙️</div>
+        <span style="font-size:13px;font-weight:500;color:var(--muted);font-family:'Montserrat',sans-serif">Налаштування</span>
+      </div>
     </div>
   </aside>
   <div class="content">
@@ -515,6 +547,19 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   </div>
 </div>
 
+<!-- MODAL: SETTINGS / MASTERS EDITOR -->
+<div class="overlay hidden" id="settingsOverlay">
+  <div class="modal" style="max-width:520px;max-height:80vh;overflow-y:auto">
+    <h2 style="font-family:'Montserrat',sans-serif;margin-bottom:16px">⚙️ Налаштування майстрів</h2>
+    <div id="masterEditList" style="margin-bottom:16px"></div>
+    <button class="btn" style="width:100%;margin-bottom:8px;border-style:dashed;color:var(--accent);border-color:var(--accent)" onclick="addNewMasterRow()">+ Додати майстра</button>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSettings()">Закрити</button>
+      <button class="btn btn-primary" onclick="saveMasterSettings()">Зберегти зміни</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -551,6 +596,9 @@ function lighten(hex) {
     '#D85A30': {bg:'rgba(248,113,113,0.12)', text:'#FCA5A5', border:'#DC2626'},
     '#378ADD': {bg:'rgba(96,165,250,0.12)', text:'#93C5FD', border:'#2563EB'},
     '#D4537E': {bg:'rgba(244,114,182,0.12)', text:'#F9A8D4', border:'#DB2777'},
+    '#00C8B4': {bg:'rgba(0,200,180,0.12)', text:'#00E5CE', border:'#00C8B4'},
+    '#E879A0': {bg:'rgba(232,121,160,0.12)', text:'#F9A8D4', border:'#E879A0'},
+    '#F59E0B': {bg:'rgba(245,158,11,0.12)', text:'#FCD34D', border:'#F59E0B'},
   };
   return palettes[hex] || {bg:'rgba(255,255,255,0.07)', text:'#E4E4E7', border:'#52525B'};
 }
@@ -708,6 +756,10 @@ function toggleMaster(id) {
   else { visibleMasters.add(id); }
   renderAll();
 }
+function showAllMasters() {
+  masters.forEach(m => visibleMasters.add(m.id));
+  renderAll();
+}
 function setMobileTab(id) {
   mobileMasterId = id;
   renderMobile();
@@ -832,6 +884,66 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 2500);
 }
+
+
+// ── SETTINGS ────────────────────────────────────────────────────────────────
+
+let pendingMasters = [];
+
+function openSettingsModal() {
+  pendingMasters = masters.map(m => ({...m}));
+  renderMasterEditList();
+  document.getElementById('settingsOverlay').classList.remove('hidden');
+}
+
+function closeSettings() {
+  document.getElementById('settingsOverlay').classList.add('hidden');
+}
+
+function renderMasterEditList() {
+  const colors = ['#7F77DD','#1D9E75','#BA7517','#D85A30','#378ADD','#D4537E','#00C8B4','#E879A0','#F59E0B'];
+  const el = document.getElementById('masterEditList');
+  el.innerHTML = pendingMasters.map((m, i) => `
+    <div style="display:flex;gap:8px;align-items:center;padding:8px;background:var(--surface2);border-radius:8px;margin-bottom:8px">
+      <div style="width:28px;height:28px;border-radius:50%;background:${m.color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${m.initials}</div>
+      <input value="${m.name}" oninput="pendingMasters[${i}].name=this.value;pendingMasters[${i}].initials=this.value.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()" style="flex:1;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px">
+      <select onchange="pendingMasters[${i}].color=this.value" style="padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font)">
+        ${colors.map(col => `<option value="${col}" ${m.color===col?'selected':''} style="background:${col}">${col}</option>`).join('')}
+      </select>
+      <button onclick="pendingMasters.splice(${i},1);renderMasterEditList()" style="background:var(--danger-light);border:none;border-radius:6px;padding:6px 10px;color:var(--danger);cursor:pointer;font-size:16px">✕</button>
+    </div>
+  `).join('');
+}
+
+function addNewMasterRow() {
+  const colors = ['#7F77DD','#1D9E75','#BA7517','#D85A30','#378ADD','#D4537E','#00C8B4','#E879A0','#F59E0B'];
+  pendingMasters.push({id: null, name: 'Новий майстер', color: colors[pendingMasters.length % colors.length], initials: 'НМ'});
+  renderMasterEditList();
+}
+
+async function saveMasterSettings() {
+  // Save new/updated masters via API
+  for (const m of pendingMasters) {
+    if (!m.id) {
+      await fetch('/api/masters', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: m.name, color: m.color, initials: m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()})
+      });
+    } else {
+      await fetch(`/api/masters/${m.id}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: m.name, color: m.color, initials: m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()})
+      });
+    }
+  }
+  closeSettings();
+  showToast('Налаштування збережено');
+  await loadAll();
+}
+
+document.getElementById('settingsOverlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeSettings(); });
 
 // ── INIT ───────────────────────────────────────────────────────────────
 loadAll();
