@@ -222,22 +222,23 @@ HTML = r"""<!DOCTYPE html>
 <style>
 :root {
   --font: 'Nunito', sans-serif;
-  --bg: #F7F5F2;
-  --surface: #FFFFFF;
-  --border: #E4E0DB;
-  --text: #1A1916;
-  --muted: #6B6860;
-  --hint: #A8A49E;
-  --accent: #5A4FD6;
-  --accent-light: #EEEDFE;
-  --accent-text: #3C3489;
-  --danger: #D85A30;
-  --danger-light: #FAECE7;
-  --success: #1D9E75;
-  --success-light: #E1F5EE;
-  --radius: 10px;
-  --radius-sm: 6px;
-  --shadow: 0 1px 3px rgba(0,0,0,.08);
+  --bg: #121214;
+  --surface: #1E1E22;
+  --surface2: #222227;
+  --border: #2E2E36;
+  --text: #E4E4E7;
+  --muted: #A1A1AA;
+  --hint: #71717A;
+  --accent: #5D45DB;
+  --accent-light: rgba(93,69,219,0.18);
+  --accent-text: #A78BFA;
+  --danger: #F87171;
+  --danger-light: rgba(248,113,113,0.15);
+  --success: #34D399;
+  --success-light: rgba(52,211,153,0.12);
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 12px rgba(0,0,0,.5);
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; }
@@ -289,7 +290,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   transition: background .12s;
 }
 .date-nav button:hover { background: var(--bg); }
-.date-nav .today-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.date-nav .today-btn { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 0 12px rgba(93,69,219,.4); }
 .date-label { font-size: 15px; font-weight: 700; min-width: 160px; }
 .add-btn {
   margin-left: auto;
@@ -317,17 +318,20 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   transition: background .1s;
 }
 .slot:last-child { border-right: none; }
-.slot.break-slot { background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 4px, var(--surface) 4px, var(--surface) 8px); }
+.slot.break-slot { background: repeating-linear-gradient(45deg, #2A2A30, #2A2A30 5px, #222227 5px, #222227 10px); }
+.slot.break-slot::after { content: ''; display: block; }
 .slot:not(.break-slot):hover { background: var(--accent-light); cursor: pointer; }
 .time-row { display: contents; }
 .time-row .time-col { border-bottom: 1px solid var(--border); }
 
 .appt {
-  border-radius: var(--radius-sm); padding: 4px 7px; height: 100%;
+  border-radius: var(--radius-sm); padding: 4px 7px 4px 10px; height: 100%;
   display: flex; flex-direction: column; justify-content: center;
-  cursor: pointer; transition: filter .1s;
+  cursor: pointer; transition: filter .15s, box-shadow .15s;
+  border-left: 3px solid transparent;
+  box-shadow: var(--shadow);
 }
-.appt:hover { filter: brightness(.95); }
+.appt:hover { filter: brightness(1.1); box-shadow: 0 6px 20px rgba(0,0,0,.6); }
 .appt .aname { font-size: 12px; font-weight: 700; }
 .appt .asvc { font-size: 11px; opacity: .75; }
 .appt .adur { font-size: 10px; opacity: .6; }
@@ -410,7 +414,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 <div class="app">
 
 <div class="topbar">
-  <h1>cosmo<span>.</span></h1>
+  <h1 style="font-weight:800;color:#E4E4E7;letter-spacing:-.5px">cosmo<span style="color:#7C3AED;font-size:22px">.</span></h1>
   <div class="spacer"></div>
   <span class="desktop-only" style="font-size:12px;color:var(--muted)">косметологічний кабінет</span>
 </div>
@@ -426,7 +430,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
   <div class="content">
     <div class="date-nav">
       <button onclick="changeDate(-1)">‹</button>
-      <input type="date" id="datePicker" onchange="pickDate(this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--surface);color:var(--text);cursor:pointer;">
+      <input type="date" id="datePicker" onchange="pickDate(this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--surface2);color:var(--text);cursor:pointer;color-scheme:dark;">
       <button onclick="changeDate(1)">›</button>
       <button class="today-btn" onclick="goToday()">Сьогодні</button>
       <span class="date-label" id="dateLabel"></span>
@@ -539,16 +543,16 @@ function formatDateUa(iso) {
 function toMin(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
 
 function lighten(hex) {
-  // hex -> pastel bg
+  // dark pastel palettes for dark theme
   const palettes = {
-    '#7F77DD': {bg:'#EEEDFE', text:'#3C3489'},
-    '#1D9E75': {bg:'#E1F5EE', text:'#085041'},
-    '#BA7517': {bg:'#FAEEDA', text:'#633806'},
-    '#D85A30': {bg:'#FAECE7', text:'#711B0C'},
-    '#378ADD': {bg:'#E6F1FB', text:'#0C447C'},
-    '#D4537E': {bg:'#FBEAF0', text:'#72243E'},
+    '#7F77DD': {bg:'rgba(110,68,255,0.15)', text:'#A78BFA', border:'#7C3AED'},
+    '#1D9E75': {bg:'rgba(52,211,153,0.12)', text:'#34D399', border:'#059669'},
+    '#BA7517': {bg:'rgba(251,191,36,0.12)', text:'#FCD34D', border:'#D97706'},
+    '#D85A30': {bg:'rgba(248,113,113,0.12)', text:'#FCA5A5', border:'#DC2626'},
+    '#378ADD': {bg:'rgba(96,165,250,0.12)', text:'#93C5FD', border:'#2563EB'},
+    '#D4537E': {bg:'rgba(244,114,182,0.12)', text:'#F9A8D4', border:'#DB2777'},
   };
-  return palettes[hex] || {bg:'#F1EFE8', text:'#2C2C2A'};
+  return palettes[hex] || {bg:'rgba(255,255,255,0.07)', text:'#E4E4E7', border:'#52525B'};
 }
 
 // ── FETCH ──────────────────────────────────────────────────────────────
@@ -669,12 +673,12 @@ function renderMobile() {
   list.innerHTML = slots.map(s => {
     if (s.isBreak) return `<div class="m-slot">
       <div class="m-time">${s.h}</div>
-      <div class="m-card" style="background:var(--bg);color:var(--hint);font-style:italic;padding:8px 10px">Обід / перерва</div>
+      <div class="m-card" style="background:#2A2A30;color:#F59E0B;font-style:italic;padding:8px 10px;border-left:3px solid #78350F">⏸ Перерва</div>
     </div>`;
     const a = s.appt;
     return `<div class="m-slot">
       <div class="m-time">${a.start_time}</div>
-      <div class="m-card" style="background:${pal.bg};color:${pal.text}" onclick="openDetail(${a.id})">
+      <div class="m-card" style="background:${pal.bg};color:${pal.text};border-left:3px solid ${pal.border};box-shadow:0 4px 12px rgba(0,0,0,.4)" onclick="openDetail(${a.id})">
         <div class="mc-name">${a.client_name}</div>
         <div class="mc-svc">${a.service}</div>
         <div class="mc-dur">${a.duration_min} хв</div>
