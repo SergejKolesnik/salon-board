@@ -238,11 +238,24 @@ def list_masters():
 @app.post("/api/masters", status_code=201)
 def create_master(m: MasterIn, sess=Depends(require_admin)):
     rid = turso_exec("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", [m.name, m.color, m.initials])
-    # Призначити базовий шаблон
+    master_id = int(rid) if rid else None
+    if not master_id:
+        raise HTTPException(500, "Не вдалося створити майстра")
+    # Знаходимо або створюємо базовий шаблон
     tpl = turso("SELECT id FROM role_templates WHERE name='Майстер-базовий'")
+    if not tpl:
+        # Шаблони відсутні — відновлюємо дефолтні
+        turso_batch([
+            "INSERT OR IGNORE INTO role_templates (name,can_view_all,can_add_any,can_edit_others) VALUES ('Майстер-базовий',0,0,0)",
+            "INSERT OR IGNORE INTO role_templates (name,can_view_all,can_add_any,can_edit_others) VALUES ('Майстер-старший',1,1,0)",
+            "INSERT OR IGNORE INTO role_templates (name,can_view_all,can_add_any,can_edit_others) VALUES ('Рецепція',1,1,1)",
+        ])
+        tpl = turso("SELECT id FROM role_templates WHERE name='Майстер-базовий'")
     if tpl:
-        turso_exec("INSERT OR REPLACE INTO master_roles (master_id,template_id) VALUES (?,?)", [int(rid), int(tpl[0]['id'])])
-    return {"id": int(rid), **m.dict()}
+        tpl_id = tpl[0].get('id')
+        if tpl_id is not None:
+            turso_exec("INSERT OR REPLACE INTO master_roles (master_id,template_id) VALUES (?,?)", [master_id, int(tpl_id)])
+    return {"id": master_id, **m.dict()}
 
 @app.put("/api/masters/{master_id}")
 def update_master(master_id: int, m: MasterIn, sess=Depends(require_admin)):
@@ -265,8 +278,19 @@ def delete_master(master_id: int, sess=Depends(require_admin)):
 @app.get("/api/role-templates")
 def list_role_templates(sess=Depends(require_admin)):
     rows = turso("SELECT * FROM role_templates ORDER BY id")
-    return [{**r, 'id': int(r['id']), 'can_view_all': bool(int(r['can_view_all'] or 0)),
-             'can_add_any': bool(int(r['can_add_any'] or 0)), 'can_edit_others': bool(int(r['can_edit_others'] or 0))} for r in rows]
+    if not rows:
+        turso_batch([
+            "INSERT OR IGNORE INTO role_templates (name,can_view_all,can_add_any,can_edit_others) VALUES ('Майстер-базовий',0,0,0)",
+            "INSERT OR IGNORE INTO role_templates (name,can_view_all,can_add_any,can_edit_others) VALUES ('Майстер-старший',1,1,0)",
+            "INSERT OR IGNORE INTO role_templates (name,can_view_all,can_add_any,can_edit_others) VALUES ('Рецепція',1,1,1)",
+        ])
+        rows = turso("SELECT * FROM role_templates ORDER BY id")
+    result = []
+    for r in rows:
+        rid = r.get('id')
+        if rid is None: continue
+        result.append({'id': int(rid), 'name': r.get('name',''), 'can_view_all': bool(int(r.get('can_view_all') or 0)), 'can_add_any': bool(int(r.get('can_add_any') or 0)), 'can_edit_others': bool(int(r.get('can_edit_others') or 0))})
+    return result
 
 @app.post("/api/role-templates", status_code=201)
 def create_role_template(t: RoleTemplateIn, sess=Depends(require_admin)):
