@@ -238,9 +238,17 @@ def list_masters():
 @app.post("/api/masters", status_code=201)
 def create_master(m: MasterIn, sess=Depends(require_admin)):
     rid = turso_exec("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", [m.name, m.color, m.initials])
-    master_id = int(rid) if rid else None
+    try:
+        master_id = int(rid) if rid is not None else None
+    except (ValueError, TypeError):
+        master_id = None
     if not master_id:
-        raise HTTPException(500, "Не вдалося створити майстра")
+        rows = turso("SELECT id FROM masters WHERE name=? ORDER BY id DESC LIMIT 1", [m.name])
+        if rows and rows[0].get('id') is not None:
+            try: master_id = int(rows[0]['id'])
+            except: pass
+    if not master_id:
+        raise HTTPException(500, "Не вдалося отримати id майстра")
     # Знаходимо або створюємо базовий шаблон
     tpl = turso("SELECT id FROM role_templates WHERE name='Майстер-базовий'")
     if not tpl:
