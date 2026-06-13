@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optionalh
 
 # ─── TURSO DB ──────────────────────────────────────────────────────────────────
 h
