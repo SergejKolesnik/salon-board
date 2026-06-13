@@ -1,6 +1,6 @@
 """
 Cosmo — розклад косметологічного кабінету
-Запуск: uvicorn main:app --reload
+Запуск: uvicorn main:app --reload 
 """
 
 import json, hashlib, secrets, os, urllib.request, urllib.error
