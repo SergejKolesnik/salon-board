@@ -401,8 +401,33 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
         e = s + int(row["duration_min"])
         if new_start < e and new_end > s:
             raise HTTPException(400, "Цей час вже зайнятий у майстра")
-    turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes) VALUES (?,?,?,?,?,?,?,?)",
-                    [a.master_id, a.client_name, a.phone, a.service, a.appt_date, a.start_time, a.duration_min, a.notes])
+    # ─── CRM: знайти або створити клієнта ────────────────────────────────
+    client_id = None
+    if a.phone:
+        existing_clients = turso("SELECT id FROM clients WHERE phone = ?", [a.phone])
+        if existing_clients:
+            client_id = int(existing_clients[0]['id'])
+        else:
+            name_parts = a.client_name.strip().split(None, 1)
+            first_name = name_parts[0] if name_parts else a.client_name
+            last_name = name_parts[1] if len(name_parts) > 1 else ''
+            cid = turso_exec(
+                "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
+                [first_name, last_name, a.phone]
+            )
+            client_id = int(cid) if cid is not None else None
+    else:
+        name_parts = a.client_name.strip().split(None, 1)
+        first_name = name_parts[0] if name_parts else a.client_name
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+        cid = turso_exec(
+            "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
+            [first_name, last_name, '']
+        )
+        client_id = int(cid) if cid is not None else None
+    # ─────────────────────────────────────────────────────────────────────
+    turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                    [a.master_id, a.client_name, a.phone, a.service, a.appt_date, a.start_time, a.duration_min, a.notes, client_id])
     rows = turso("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date=? AND a.start_time=? ORDER BY a.id DESC LIMIT 1",
                  [a.master_id, a.appt_date, a.start_time])
     if not rows:
@@ -482,6 +507,45 @@ def breaks_range(master_id: int, from_date: str = None, to_date: str = None):
     else:
         rows = turso("SELECT * FROM breaks WHERE master_id=?", [master_id])
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
+
+# ─── CRM: CLIENTS ──────────────────────────────────────────────────────────────
+
+@app.get("/api/client/{client_id}")
+def get_client(client_id: int, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    rows = turso("SELECT * FROM clients WHERE id=?", [client_id])
+    if not rows:
+        raise HTTPException(404, "Клієнта не знайдено")
+    r = rows[0]
+    return {
+        "id": int(r["id"]),
+        "first_name": r.get("first_name", ""),
+        "last_name": r.get("last_name", ""),
+        "phone": r.get("phone", ""),
+        "birthday": r.get("birthday", ""),
+        "telegram_chat_id": r.get("telegram_chat_id", ""),
+        "notes": r.get("notes", ""),
+        "created_at": r.get("created_at", ""),
+        "updated_at": r.get("updated_at", ""),
+    }
+
+@app.get("/api/client/{client_id}/history")
+def get_client_history(client_id: int, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    rows = turso(
+        "SELECT * FROM appointments WHERE client_id = ? ORDER BY appt_date DESC, start_time DESC",
+        [client_id]
+    )
+    return [{
+        **r,
+        'id': int(r['id']),
+        'master_id': int(r['master_id']),
+        'duration_min': int(r['duration_min']),
+    } for r in rows]
 
 @app.get("/api/services")
 def list_services():
