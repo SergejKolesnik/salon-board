@@ -1,5 +1,5 @@
 
-const HOURS=Array.from({length:10},(_,i)=>`${String(i+9).padStart(2,"0")}:00`);
+const HOURS=(()=>{const s=[];for(let h=9;h<=18;h++){s.push(String(h).padStart(2,"0")+":00");if(h<18)s.push(String(h).padStart(2,"0")+":30");}return s;})();
 const DAYS=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
 const MONTHS=["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
 let appointments=[],breaks=[],masterId=null,services=[];
@@ -87,7 +87,7 @@ function renderGrid(days,today){
     }
   });
   HOURS.forEach(hr=>{
-    h+=`<div class="time-col">${hr}</div>`;
+    h+=`<div class="time-col">${hr.endsWith(":00")?hr:""}</div>`;
     days.forEach(d=>{
       const iso=isoDate(d);
       const key=iso+"_"+hr;
@@ -97,7 +97,7 @@ function renderGrid(days,today){
       else if(occ==="blocked"){h+=`<div class="slot slot-blocked"></div>`;}
       else if(occ&&occ.id){
         const rows=Math.ceil(occ.duration_min/30);
-        const px=(rows*110)+"px";
+        const px=(rows*55)+"px";
         h+=`<div class="slot slot-appt-wrap" style="height:${px};z-index:2"><div class="appt" onclick="openDetail(${occ.id})"><div class="an">${occ.client_name}</div><div class="as">${occ.service}</div><div class="ad">${occ.duration_min} хв</div></div></div>`;
       }
       else{h+=`<div class="slot" onclick="openAddOnSlot('${iso}','${hr}')"></div>`;}
