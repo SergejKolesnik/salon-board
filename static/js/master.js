@@ -1,7 +1,7 @@
 
 const HOURS=Array.from({length:10},(_,i)=>`${String(i+9).padStart(2,"0")}:00`);
-const DAYS=["ÐÐ´","ÐÐ½","ÐÑ","Ð¡Ñ","Ð§Ñ","ÐÑ","Ð¡Ð±"];
-const MONTHS=["ÑÑÑÐ½Ñ","Ð»ÑÑÐ¾Ð³Ð¾","Ð±ÐµÑÐµÐ·Ð½Ñ","ÐºÐ²ÑÑÐ½Ñ","ÑÑÐ°Ð²Ð½Ñ","ÑÐµÑÐ²Ð½Ñ","Ð»Ð¸Ð¿Ð½Ñ","ÑÐµÑÐ¿Ð½Ñ","Ð²ÐµÑÐµÑÐ½Ñ","Ð¶Ð¾Ð²ÑÐ½Ñ","Ð»Ð¸ÑÑÐ¾Ð¿Ð°Ð´Ð°","Ð³ÑÑÐ´Ð½Ñ"];
+const DAYS=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
+const MONTHS=["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
 let appointments=[],breaks=[],masterId=null,services=[];
 let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
@@ -32,16 +32,16 @@ async function loadWeek(){
     else { const ms=await fetch("/api/masters").then(r=>r.json());if(ms.length)masterId=ms[0].id; }
   }
   if(!masterId)return;
-  // ÐÐ½Ð¾Ð²Ð»ÑÑÐ¼Ð¾ ÑÐ¼'Ñ Ð¼Ð°Ð¹ÑÑÑÐ° Ð² ÑÐµÐ´ÐµÑÑ
+  // Оновлюємо ім'я майстра в хедері
   if(!window._masterName){
     const me=await fetch("/api/me").then(r=>r.json());
     if(me.name){window._masterName=me.name;const b=document.getElementById("masterNameBadge");if(b)b.textContent=me.name;}
   }
-  // ÐÐ½Ð¾Ð²Ð»ÑÑÐ¼Ð¾ ÐºÐ½Ð¾Ð¿ÐºÑ Ð¡ÑÐ¾Ð³Ð¾Ð´Ð½Ñ
+  // Оновлюємо кнопку Сьогодні
   (function(){
     const now=new Date();
-    const days=["ÐÐ´","ÐÐ½","ÐÑ","Ð¡Ñ","Ð§Ñ","ÐÑ","Ð¡Ð±"];
-    const months=["ÑÑÑ","Ð»ÑÑ","Ð±ÐµÑ","ÐºÐ²Ñ","ÑÑÐ°","ÑÐµÑ","Ð»Ð¸Ð¿","ÑÐµÑ","Ð²ÐµÑ","Ð¶Ð¾Ð²","Ð»Ð¸Ñ","Ð³ÑÑ"];
+    const days=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
+    const months=["січ","лют","бер","кві","тра","чер","лип","сер","вер","жов","лис","гру"];
     const btn=document.getElementById("todayBtn");
     if(btn) btn.innerHTML="&#128197; "+days[now.getDay()]+", "+now.getDate()+" "+months[now.getMonth()];
   })();
@@ -65,7 +65,7 @@ function renderAll(){
   const days=Array.from({length:viewDays},(_,i)=>addDays(periodStart,i));
   const today=isoDate(new Date());
   const f=fmtDate(isoDate(days[0])),t=viewDays>1?fmtDate(isoDate(days[days.length-1])):"";
-  document.getElementById("weekLabel").textContent=viewDays===1?`${DAYS[days[0].getDay()]}, ${fmtDate(isoDate(days[0]))}`:(`${f} â ${t}`);
+  document.getElementById("weekLabel").textContent=viewDays===1?`${DAYS[days[0].getDay()]}, ${fmtDate(isoDate(days[0]))}`:(`${f} — ${t}`);
   renderGrid(days,today);
   renderScrollCalendar();
 }
@@ -97,7 +97,7 @@ function renderGrid(days,today){
       else if(occ&&occ.id){
         const rows=Math.ceil(occ.duration_min/30);
         const px=(rows*110)+"px";
-        h+=`<div class="slot slot-appt-wrap" style="height:${px};z-index:2"><div class="appt" onclick="openDetail(${occ.id})"><div class="an">${occ.client_name}</div><div class="as">${occ.service}</div><div class="ad">${occ.duration_min} ÑÐ²</div></div></div>`;
+        h+=`<div class="slot slot-appt-wrap" style="height:${px};z-index:2"><div class="appt" onclick="openDetail(${occ.id})"><div class="an">${occ.client_name}</div><div class="as">${occ.service}</div><div class="ad">${occ.duration_min} хв</div></div></div>`;
       }
       else{h+=`<div class="slot" onclick="openAddOnSlot('${iso}','${hr}')"></div>`;}
     });
@@ -130,8 +130,8 @@ function renderScrollCalendar(){
       const isB=db.some(b=>toMin(b.start_time)<=toMin(hr)&&toMin(b.end_time)>toMin(hr));
       const ap=da.find(a=>a.start_time===hr);
       let inner="";
-      if(isB) inner=`<div class="cal-break">ÐÐµÑÐµÑÐ²Ð°</div>`;
-      else if(ap) inner=`<div class="cal-appt" onclick="event.stopPropagation();openDetail(${ap.id})"><div class="cal-appt-name">${ap.client_name}</div><div class="cal-appt-svc">${ap.service}</div><div class="cal-appt-dur">${ap.duration_min}ÑÐ²</div></div>`;
+      if(isB) inner=`<div class="cal-break">Перерва</div>`;
+      else if(ap) inner=`<div class="cal-appt" onclick="event.stopPropagation();openDetail(${ap.id})"><div class="cal-appt-name">${ap.client_name}</div><div class="cal-appt-svc">${ap.service}</div><div class="cal-appt-dur">${ap.duration_min}хв</div></div>`;
       return `<div class="cal-slot" onclick="openAddOnSlot('${iso}','${hr}')"><div class="cal-slot-time">${hr}</div><div class="cal-slot-content">${inner}</div></div>`;
     }).join("");
     return `<div class="cal-day-col${isToday?" today":""}">
@@ -150,7 +150,7 @@ function renderScrollCalendar(){
   const fab=document.createElement("button");
   fab.id="calFab";
   fab.className="cal-fab";
-  fab.textContent="+ ÐÐ¾Ð²Ð¸Ð¹ Ð·Ð°Ð¿Ð¸Ñ";
+  fab.textContent="+ Новий запис";
   fab.onclick=()=>openAddModal(isoDate(periodStart),"10:00");
   document.querySelector(".mobile-wrap").appendChild(fab);
 }
@@ -176,7 +176,7 @@ function goToDate(iso){
 function setMobileDay(iso){mobileDay=new Date(iso+"T12:00:00");}
 function openAddModal(date,time){
   editingId=null;
-  document.getElementById("modalTitle").textContent="ÐÐ¾Ð²Ð¸Ð¹ Ð·Ð°Ð¿Ð¸Ñ";
+  document.getElementById("modalTitle").textContent="Новий запис";
   document.getElementById("deleteBtn").classList.add("hidden");
   document.getElementById("fClient").value="";
   var ph=document.getElementById("fPhone");if(ph)ph.value="";
@@ -195,10 +195,10 @@ function closeModal(){document.getElementById("modalOverlay").classList.add("hid
 function openDetail(id){
   const a=appointments.find(x=>x.id==id);if(!a)return;
   document.getElementById("detailName").textContent=a.client_name;
-  document.getElementById("detailBody").innerHTML=`<div class="detail-row"><span class="dl">ÐÐ¾ÑÐ»ÑÐ³Ð°</span><span class="dv">${a.service}</span></div><div class="detail-row"><span class="dl">ÐÐ°ÑÐ°</span><span class="dv">${fmtDate(a.appt_date)}</span></div><div class="detail-row"><span class="dl">Ð§Ð°Ñ</span><span class="dv">${a.start_time}, ${a.duration_min} ÑÐ²</span></div>${a.notes?`<div class="detail-row"><span class="dl">ÐÐ¾ÑÐ°ÑÐºÐ¸</span><span class="dv">${a.notes}</span></div>`:""}`;
+  document.getElementById("detailBody").innerHTML=`<div class="detail-row"><span class="dl">Послуга</span><span class="dv">${a.service}</span></div><div class="detail-row"><span class="dl">Дата</span><span class="dv">${fmtDate(a.appt_date)}</span></div><div class="detail-row"><span class="dl">Час</span><span class="dv">${a.start_time}, ${a.duration_min} хв</span></div>${a.notes?`<div class="detail-row"><span class="dl">Нотатки</span><span class="dv">${a.notes}</span></div>`:""}`;
   document.getElementById("detailEditBtn").onclick=()=>{
     editingId=a.id;
-    document.getElementById("modalTitle").textContent="Ð ÐµÐ´Ð°Ð³ÑÐ²Ð°ÑÐ¸";
+    document.getElementById("modalTitle").textContent="Редагувати";
     document.getElementById("deleteBtn").classList.remove("hidden");
     document.getElementById("fClient").value=a.client_name;
     document.getElementById("fService").value=a.service;
@@ -216,18 +216,18 @@ document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target
 document.getElementById("detailOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail();});
 async function saveAppt(){
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim()};
-  if(!body.client_name||!body.service){alert("ÐÐ°Ð¿Ð¾Ð²Ð½ÑÑÑ ÑÐ¼\u0027Ñ Ñ Ð¿Ð¾ÑÐ»ÑÐ³Ñ");return;}
+  if(!body.client_name||!body.service){alert("Заповніть ім\u0027я і послугу");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
   const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!res.ok){const e=await res.json();alert(e.detail||"ÐÐ¾Ð¼Ð¸Ð»ÐºÐ°");return;}
-  closeModal();showToast(editingId?"ÐÐ½Ð¾Ð²Ð»ÐµÐ½Ð¾":"ÐÐ±ÐµÑÐµÐ¶ÐµÐ½Ð¾");
+  if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+  closeModal();showToast(editingId?"Оновлено":"Збережено");
   mobileDay=new Date(body.appt_date+"T12:00:00");
   await loadWeek();
 }
 async function deleteAppt(){
-  if(!editingId||!confirm("ÐÐ¸Ð´Ð°Ð»Ð¸ÑÐ¸ Ð·Ð°Ð¿Ð¸Ñ?"))return;
+  if(!editingId||!confirm("Видалити запис?"))return;
   await fetch(`/api/appointments/${editingId}`,{method:"DELETE"});
-  closeModal();showToast("ÐÐ¸Ð´Ð°Ð»ÐµÐ½Ð¾");await loadWeek();
+  closeModal();showToast("Видалено");await loadWeek();
 }
 function showToast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2500);}
 // Force mobile layout check
@@ -266,7 +266,7 @@ safeOn("detailOverlay","click",function(e){if(e.target===this)closeDetail();});
 safeClick("detailEditBtn",function(){
   var a=window._curAppt;if(!a)return;
   editingId=a.id;
-  document.getElementById("modalTitle").textContent="Ð ÐµÐ´Ð°Ð³ÑÐ²Ð°ÑÐ¸";
+  document.getElementById("modalTitle").textContent="Редагувати";
   document.getElementById("deleteBtn").classList.remove("hidden");
   document.getElementById("fClient").value=a.client_name;
   document.getElementById("fService").value=a.service;
@@ -281,7 +281,7 @@ loadWeek();
 function setDur(min){
   document.getElementById("fDuration").value=min;
   document.querySelectorAll(".dur-btn").forEach(b=>{
-    b.classList.toggle("active",parseInt(b.textContent)===min||(min===60&&b.textContent==="1 Ð³Ð¾Ð´")||(min===90&&b.textContent==="1.5 Ð³Ð¾Ð´")||(min===120&&b.textContent==="2 Ð³Ð¾Ð´"));
+    b.classList.toggle("active",parseInt(b.textContent)===min||(min===60&&b.textContent==="1 год")||(min===90&&b.textContent==="1.5 год")||(min===120&&b.textContent==="2 год"));
   });
 }
 function fmtPhone(el){
