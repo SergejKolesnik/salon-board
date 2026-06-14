@@ -104,6 +104,7 @@ function renderGrid(days,today){
     });
   });
   g.innerHTML=h;
+if(viewDays===7){const wrap=document.querySelector(".week-wrap");if(wrap)wrap.scrollLeft=0;}
 }
 function renderMobileDays(days,today){}
 function renderMobileList(){}
