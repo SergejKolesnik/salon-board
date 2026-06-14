@@ -114,9 +114,9 @@ def init_db():
         pass
     # Migration: add client_id column to appointments
     try:
-    turso_exec("ALTER TABLE appointments ADD COLUMN client_id INTEGER", [])
+        turso_exec("ALTER TABLE appointments ADD COLUMN client_id INTEGER", [])
     except Exception:
-    pass
+        pass
     # Default services
     svc_rows = turso("SELECT COUNT(*) as cnt FROM services")
     if int(svc_rows[0]["cnt"]) == 0:
