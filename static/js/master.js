@@ -72,6 +72,7 @@ function renderAll(){
 
 function renderGrid(days,today){
   const g=document.getElementById("weekGrid");
+  g.style.gridTemplateColumns=`52px repeat(${days.length},1fr)`;
   let h=`<div class="wh"></div>`;
   days.forEach(d=>{const iso=isoDate(d),iT=iso===today;h+=`<div class="wh${iT?" today":""}"><div class="wh-day">${DAYS[d.getDay()]}</div><div class="wh-date">${d.getDate()}</div></div>`;});
   // Track occupied slots
