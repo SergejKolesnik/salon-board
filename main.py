@@ -103,17 +103,9 @@ def init_db():
             master_id INTEGER PRIMARY KEY,
             template_id INTEGER NOT NULL
         )""",
-        """CREATE TABLE IF NOT EXISTS clients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    first_name TEXT NOT NULL,
-    last_name TEXT DEFAULT '',
-    phone TEXT DEFAULT '',
-    birthday TEXT DEFAULT '',
-    telegram_chat_id TEXT DEFAULT '',
-    notes TEXT DEFAULT '',
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-)""",
+        """CREATE TABLE IF NOT EXISTS clients (id INTEGER PRIMARY KEY AUTOINCREMENT, first_name TEXT NOT NULL, last_name TEXT DEFAULT '', phone TEXT DEFAULT '', birthday TEXT DEFAULT '',
+       telegram_chat_id TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+        )""",
     ])
     # Migration: add phone column if not exists
     try:
@@ -121,9 +113,9 @@ def init_db():
     except Exception:
         pass
     # Migration: add client_id column to appointments
-try:
+    try:
     turso_exec("ALTER TABLE appointments ADD COLUMN client_id INTEGER", [])
-except Exception:
+    except Exception:
     pass
     # Default services
     svc_rows = turso("SELECT COUNT(*) as cnt FROM services")
