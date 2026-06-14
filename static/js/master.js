@@ -73,38 +73,66 @@ function renderAll(){
 function renderGrid(days,today){
   const g=document.getElementById("weekGrid");
   g.style.gridTemplateColumns=`52px repeat(${days.length},1fr)`;
+
   let h=`<div class="wh"></div>`;
-  days.forEach(d=>{const iso=isoDate(d),iT=iso===today;h+=`<div class="wh${iT?" today":""}"><div class="wh-day">${DAYS[d.getDay()]}</div><div class="wh-date">${d.getDate()}</div></div>`;});
-  // Track occupied slots
-  const occupied={};
-  appointments.forEach(a=>{
-    const startM=toMin(a.start_time);
-    const slots=Math.ceil(a.duration_min/30);
-    for(let i=0;i<slots;i++){
-      const slotM=startM+i*30;
-      const slotH=String(Math.floor(slotM/60)).padStart(2,"0")+":"+String(slotM%60).padStart(2,"0");
-      occupied[a.appt_date+"_"+slotH]=i===0?a:"blocked";
-    }
+
+  days.forEach(d=>{
+    const iso=isoDate(d);
+    const iT=iso===today;
+    h+=`<div class="wh${iT?" today":""}">
+      <div class="wh-day">${DAYS[d.getDay()]}</div>
+      <div class="wh-date">${d.getDate()}</div>
+    </div>`;
   });
+
+  const occupied={};
+
+  appointments.forEach(a=>{
+    const slotH=a.start_time.slice(0,5);
+    occupied[a.appt_date+"_"+slotH]=a;
+  });
+
   HOURS.forEach(hr=>{
     h+=`<div class="time-col">${hr.endsWith(":00")?hr:""}</div>`;
+
     days.forEach(d=>{
       const iso=isoDate(d);
       const key=iso+"_"+hr;
       const occ=occupied[key];
-      const isB=breaks.some(b=>b.break_date===iso&&toMin(b.start_time)<=toMin(hr)&&toMin(b.end_time)>toMin(hr));
-      if(isB){h+=`<div class="slot break-slot"></div>`;}
-      else if(occ==="blocked"){h+=`<div class="slot slot-blocked"></div>`;}
-      else if(occ&&occ.id){
+
+      const isB=breaks.some(b=>
+        b.break_date===iso &&
+        toMin(b.start_time)<=toMin(hr) &&
+        toMin(b.end_time)>toMin(hr)
+      );
+
+      if(isB){
+        h+=`<div class="slot break-slot"></div>`;
+      }
+      else if(occ && occ.id){
         const rows=Math.ceil(occ.duration_min/30);
         const px=(rows*55)+"px";
-        h+=`<div class="slot slot-appt-wrap" style="height:${px};z-index:2"><div class="appt" onclick="openDetail(${occ.id})"><div class="an">${occ.client_name}</div><div class="as">${occ.service}</div><div class="ad">${occ.duration_min} хв</div></div></div>`;
+
+        h+=`<div class="slot slot-appt-wrap" onclick="openAddOnSlot('${iso}','${hr}')">
+          <div class="appt" style="height:${px};z-index:2" onclick="event.stopPropagation();openDetail(${occ.id})">
+            <div class="an">${occ.client_name}</div>
+            <div class="as">${occ.service}</div>
+            <div class="ad">${occ.duration_min} хв</div>
+          </div>
+        </div>`;
       }
-      else{h+=`<div class="slot" onclick="openAddOnSlot('${iso}','${hr}')"></div>`;}
+      else{
+        h+=`<div class="slot" onclick="openAddOnSlot('${iso}','${hr}')"></div>`;
+      }
     });
   });
+
   g.innerHTML=h;
-if(viewDays===7){const wrap=document.querySelector(".week-wrap");if(wrap)wrap.scrollLeft=0;}
+
+  if(viewDays===7){
+    const wrap=document.querySelector(".week-wrap");
+    if(wrap)wrap.scrollLeft=0;
+  }
 }
 function renderMobileDays(days,today){}
 function renderMobileList(){}
