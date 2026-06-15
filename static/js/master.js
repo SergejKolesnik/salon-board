@@ -222,25 +222,64 @@ function openAddModal(date,time){
 }
 function openAddOnSlot(date,time){openAddModal(date,time);}
 function closeModal(){document.getElementById("modalOverlay").classList.add("hidden");}
-function openDetail(id){
-  const a=appointments.find(x=>x.id==id);if(!a)return;
-  document.getElementById("detailName").textContent=a.client_name;
-  document.getElementById("detailBody").innerHTML=`<div class="detail-row"><span class="dl">Послуга</span><span class="dv">${a.service}</span></div><div class="detail-row"><span class="dl">Дата</span><span class="dv">${fmtDate(a.appt_date)}</span></div><div class="detail-row"><span class="dl">Час</span><span class="dv">${a.start_time}, ${a.duration_min} хв</span></div>${a.notes?`<div class="detail-row"><span class="dl">Нотатки</span><span class="dv">${a.notes}</span></div>`:""}`;
-  document.getElementById("detailEditBtn").onclick=()=>{
-    editingId=a.id;
-    document.getElementById("modalTitle").textContent="Редагувати";
-    document.getElementById("deleteBtn").classList.remove("hidden");
-    document.getElementById("fClient").value=a.client_name;
-    document.getElementById("fService").value=a.service;
-    document.getElementById("fDate").value=a.appt_date;
-    document.getElementById("fTime").value=a.start_time;
-    document.getElementById("fDuration").value=a.duration_min;
-    document.getElementById("fNotes").value=a.notes||"";
-    closeDetail();
-    document.getElementById("modalOverlay").classList.remove("hidden");
-  };
-  document.getElementById("detailOverlay").classList.remove("hidden");
+async function openDetail(id){
+const a=appointments.find(x=>x.id==id);if(!a)return;
+document.getElementById("detailName").textContent=a.client_name;
+document.getElementById("detailBody").innerHTML='<div class="detail-row"><span class="dl">\u041f\u043e\u0441\u043b\u0443\u0433\u0430</span><span class="dv">'+a.service+'</span></div><div class="detail-row"><span class="dl">\u0414\u0430\u0442\u0430</span><span class="dv">'+fmtDate(a.appt_date)+'</span></div><div class="detail-row"><span class="dl">\u0427\u0430\u0441</span><span class="dv">'+a.start_time+', '+a.duration_min+' \u0445\u0432</span></div>'+(a.notes?'<div class="detail-row"><span class="dl">\u041d\u043e\u0442\u0430\u0442\u043a\u0438</span><span class="dv">'+a.notes+'</span></div>':'');
+document.getElementById("detailEditBtn").onclick=function(){
+editingId=a.id;
+document.getElementById("modalTitle").textContent="\u0420\u0435\u0434\u0430\u0433\u0443\u0432\u0430\u0442\u0438";
+document.getElementById("deleteBtn").classList.remove("hidden");
+document.getElementById("fClient").value=a.client_name;
+document.getElementById("fService").value=a.service;
+document.getElementById("fDate").value=a.appt_date;
+document.getElementById("fTime").value=a.start_time;
+document.getElementById("fDuration").value=a.duration_min;
+document.getElementById("fNotes").value=a.notes||"";
+closeDetail();
+document.getElementById("modalOverlay").classList.remove("hidden");
+};
+// CRM \u0415\u0442\u0430\u043f 2: \u0431\u043b\u043e\u043a \u043a\u043b\u0456\u0454\u043d\u0442\u0430
+var clientBlock=document.getElementById("detailClientBlock");
+if(!clientBlock){document.getElementById("detailOverlay").classList.remove("hidden");return;}
+if(a.client_id){
+fetch("/api/client/"+a.client_id)
+.then(function(r){return r.json();})
+.then(function(clientData){
+return fetch("/api/client/"+a.client_id+"/history")
+.then(function(r){return r.json();})
+.then(function(historyData){
+var dob=clientData.birthday?"<div class=\"detail-row\"><span class=\"dl\">\u0414\u0430\u0442\u0430 \u043d\u0430\u0440\u043e\u0434\u0436\u0435\u043d\u043d\u044f</span><span class=\"dv\">"+clientData.birthday+"</span></div>":"";
+var notes2=clientData.notes?"<div class=\"detail-row\"><span class=\"dl\">\u041d\u043e\u0442\u0430\u0442\u043a\u0438</span><span class=\"dv\">"+clientData.notes+"</span></div>":"";
+var fullName=(clientData.first_name||"")+" "+(clientData.last_name||"");fullName=fullName.trim()||a.client_name;
+var phone=clientData.phone||"\u2014";
+var visits="<div class=\"crm-no-visits\">\u041f\u043e\u043f\u0435\u0440\u0435\u0434\u043d\u0456\u0445 \u0432\u0456\u0437\u0438\u0442\u0456\u0432 \u043d\u0435\u043c\u0430\u0454</div>";
+if(Array.isArray(historyData)&&historyData.length>0){
+visits=historyData.slice(0,5).map(function(v){return "<div class=\"crm-visit\">"+v.appt_date+" \u2014 "+v.service+" \u2014 "+v.duration_min+" \u0445\u0432</div>";}).join("");
 }
+clientBlock.innerHTML=
+"<div class=\"crm-section-title\">\u041a\u043b\u0456\u0454\u043d\u0442</div>"
++"<div class=\"detail-row\"><span class=\"dl\">\u0406\u043c'\u044f</span><span class=\"dv\">"+fullName+"</span></div>"
++"<div class=\"detail-row\"><span class=\"dl\">\u0422\u0435\u043b\u0435\u0444\u043e\u043d</span><span class=\"dv\">"+phone+"</span></div>"
++dob+notes2
++"<div class=\"crm-section-title crm-history-title\">\u0406\u0441\u0442\u043e\u0440\u0456\u044f \u0432\u0456\u0437\u0438\u0442\u0456\u0432</div>"
++"<div class=\"crm-history-list\">"+visits+"</div>";
+clientBlock.style.display="";
+document.getElementById("detailOverlay").classList.remove("hidden");
+});
+})
+.catch(function(){
+clientBlock.innerHTML="<div class=\"crm-section-title\">\u041a\u043b\u0456\u0454\u043d\u0442</div><div class=\"crm-no-visits\">\u041d\u0435 \u0432\u0434\u0430\u043b\u043e\u0441\u044f \u0437\u0430\u0432\u0430\u043d\u0442\u0430\u0436\u0438\u0442\u0438 \u0434\u0430\u043d\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0430</div>";
+clientBlock.style.display="";
+document.getElementById("detailOverlay").classList.remove("hidden");
+});
+}else{
+clientBlock.innerHTML="<div class=\"crm-no-client\">\u041a\u043b\u0456\u0454\u043d\u0442 \u0449\u0435 \u043d\u0435 \u043f\u0440\u0438\u0432'\u044f\u0437\u0430\u043d\u0438\u0439 \u0434\u043e \u0431\u0430\u0437\u0438.</div>";
+clientBlock.style.display="";
+document.getElementById("detailOverlay").classList.remove("hidden");
+}
+}
+
 function closeDetail(){document.getElementById("detailOverlay").classList.add("hidden");}
 document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
 document.getElementById("detailOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail();});
