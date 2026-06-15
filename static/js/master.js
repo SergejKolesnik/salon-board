@@ -184,8 +184,8 @@ function renderScrollCalendar(){
       if(isB) inner=`<div class="cal-break">Перерва</div>`;
       else if(ap){
         const rows=Math.ceil(ap.duration_min/30);
-        const px=(rows*52)+"px";
-        inner=`<div class="cal-appt" style="min-height:${px}" onclick="event.stopPropagation();openDetail(${ap.id})"><div class="cal-appt-name">${ap.client_name}</div><div class="cal-appt-svc">${ap.service}</div><div class="cal-appt-dur">${ap.duration_min}хв</div></div>`;
+        const px=rows*52-8;
+        inner=`<div class="cal-appt" style="position:absolute;left:40px;right:4px;top:4px;height:${px}px;z-index:5" onclick="event.stopPropagation();openDetail(${ap.id})"><div class="cal-appt-name">${ap.client_name}</div><div class="cal-appt-svc">${ap.service}</div><div class="cal-appt-dur">${ap.duration_min}хв</div></div>`;
       }
       return `<div class="cal-slot" onclick="openAddOnSlot('${iso}','${hr}')"><div class="cal-slot-time">${hr}</div><div class="cal-slot-content">${inner}</div></div>`;
     }).join("");
