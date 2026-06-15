@@ -145,6 +145,7 @@ class AppointmentIn(BaseModel):
     start_time: str
     duration_min: int = 60
     notes: str = ""
+    client_id: Optional[int] = None
 
 class AppointmentUpdate(BaseModel):
     client_name: Optional[str] = None
@@ -403,28 +404,35 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
             raise HTTPException(400, "Цей час вже зайнятий у майстра")
     # ─── CRM: знайти або створити клієнта ────────────────────────────────
     client_id = None
-    if a.phone:
-        existing_clients = turso("SELECT id FROM clients WHERE phone = ?", [a.phone])
-        if existing_clients:
-            client_id = int(existing_clients[0]['id'])
+    # Якщо client_id переданий явно з фронтенду — перевірити чи існує
+    if a.client_id:
+        existing = turso("SELECT id FROM clients WHERE id = ?", [a.client_id])
+        if existing:
+            client_id = int(existing[0]['id'])
+    # Інакше — автоматичний пошук/створення за телефоном
+    if client_id is None:
+        if a.phone:
+            existing_clients = turso("SELECT id FROM clients WHERE phone = ?", [a.phone])
+            if existing_clients:
+                client_id = int(existing_clients[0]['id'])
+            else:
+                name_parts = a.client_name.strip().split(None, 1)
+                first_name = name_parts[0] if name_parts else a.client_name
+                last_name = name_parts[1] if len(name_parts) > 1 else ''
+                cid = turso_exec(
+                    "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
+                    [first_name, last_name, a.phone]
+                )
+                client_id = int(cid) if cid is not None else None
         else:
             name_parts = a.client_name.strip().split(None, 1)
             first_name = name_parts[0] if name_parts else a.client_name
             last_name = name_parts[1] if len(name_parts) > 1 else ''
             cid = turso_exec(
                 "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
-                [first_name, last_name, a.phone]
+                [first_name, last_name, '']
             )
             client_id = int(cid) if cid is not None else None
-    else:
-        name_parts = a.client_name.strip().split(None, 1)
-        first_name = name_parts[0] if name_parts else a.client_name
-        last_name = name_parts[1] if len(name_parts) > 1 else ''
-        cid = turso_exec(
-            "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
-            [first_name, last_name, '']
-        )
-        client_id = int(cid) if cid is not None else None
     # ─────────────────────────────────────────────────────────────────────
     turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id) VALUES (?,?,?,?,?,?,?,?,?)",
                     [a.master_id, a.client_name, a.phone, a.service, a.appt_date, a.start_time, a.duration_min, a.notes, client_id])
@@ -509,6 +517,27 @@ def breaks_range(master_id: int, from_date: str = None, to_date: str = None):
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
 
 # ─── CRM: CLIENTS ──────────────────────────────────────────────────────────────
+
+@app.get("/api/clients/search")
+def search_clients(q: str = "", token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    if len(q.strip()) < 2:
+        return []
+    like = f"%{q.strip()}%"
+    rows = turso(
+        "SELECT * FROM clients WHERE first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? ORDER BY updated_at DESC, id DESC LIMIT 10",
+        [like, like, like]
+    )
+    return [{
+        "id": int(r["id"]),
+        "first_name": r.get("first_name", ""),
+        "last_name": r.get("last_name", ""),
+        "phone": r.get("phone", ""),
+        "birthday": r.get("birthday", ""),
+        "notes": r.get("notes", ""),
+    } for r in rows]
 
 @app.get("/api/client/{client_id}")
 def get_client(client_id: int, token: str = Cookie(default=None)):
