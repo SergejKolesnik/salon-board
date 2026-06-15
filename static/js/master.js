@@ -6,6 +6,7 @@ let appointments=[],breaks=[],masterId=null,services=[];
 let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
 let editingId=null,mobileDay=new Date();
+let selectedClientId=null;
 
 function setView(n){
   viewDays=n;
@@ -206,6 +207,7 @@ function goToDate(iso){
 function setMobileDay(iso){mobileDay=new Date(iso+"T12:00:00");}
 function openAddModal(date,time){
   editingId=null;
+  selectedClientId=null;hideClientSuggestions();
   document.getElementById("modalTitle").textContent="Новий запис";
   document.getElementById("deleteBtn").classList.add("hidden");
   document.getElementById("fClient").value="";
@@ -284,7 +286,7 @@ function closeDetail(){document.getElementById("detailOverlay").classList.add("h
 document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
 document.getElementById("detailOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail();});
 async function saveAppt(){
-  const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim()};
+  const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null};
   if(!body.client_name||!body.service){alert("Заповніть ім\u0027я і послугу");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
   const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -347,6 +349,64 @@ safeClick("detailEditBtn",function(){
   document.getElementById("modalOverlay").classList.remove("hidden");
 });
 loadWeek();
+// ─── CRM Stage 3: client autocomplete ─────────────────────────────────────
+let _clientSearchTimer=null;
+function onClientInput(){
+  selectedClientId=null;
+  const q=document.getElementById("fClient").value.trim();
+  clearTimeout(_clientSearchTimer);
+  if(q.length<2){hideClientSuggestions();return;}
+  _clientSearchTimer=setTimeout(function(){searchClients(q);},250);
+}
+function onPhoneInput(){
+  selectedClientId=null;
+  const q=document.getElementById("fPhone")?document.getElementById("fPhone").value.trim():"";
+  clearTimeout(_clientSearchTimer);
+  if(q.length<2){hideClientSuggestions();return;}
+  _clientSearchTimer=setTimeout(function(){searchClients(q);},250);
+}
+function searchClients(q){
+  fetch("/api/clients/search?q="+encodeURIComponent(q))
+  .then(function(r){return r.json();})
+  .then(function(list){showClientSuggestions(list);})
+  .catch(function(){hideClientSuggestions();});
+}
+function showClientSuggestions(list){
+  var wrap=document.getElementById("clientSuggestWrap");
+  if(!wrap)return;
+  if(!list||list.length===0){hideClientSuggestions();return;}
+  wrap.innerHTML=list.map(function(c){
+    var fullName=((c.first_name||"")+" "+(c.last_name||"")).trim();
+    var phone=c.phone||"";
+    return '<div class="client-suggest-item" onclick="selectClient('+c.id+','+JSON.stringify(fullName)+','+JSON.stringify(phone)+')">'
+      +'<span class="cs-name">'+fullName+'</span>'
+      +(phone?'<span class="cs-phone">'+phone+'</span>':'')
+      +'</div>';
+  }).join("");
+  wrap.style.display="block";
+}
+function hideClientSuggestions(){
+  var wrap=document.getElementById("clientSuggestWrap");
+  if(wrap)wrap.style.display="none";
+}
+function selectClient(id,name,phone){
+  selectedClientId=id;
+  var fc=document.getElementById("fClient");
+  if(fc)fc.value=name;
+  var fp=document.getElementById("fPhone");
+  if(fp&&phone)fp.value=phone;
+  hideClientSuggestions();
+}
+document.addEventListener("click",function(e){
+  var wrap=document.getElementById("clientSuggestWrap");
+  if(wrap&&!wrap.contains(e.target)&&e.target.id!=="fClient"&&e.target.id!=="fPhone"){
+    hideClientSuggestions();
+  }
+});
+safeOn("fClient","input",onClientInput);
+safeOn("fPhone","input",onPhoneInput);
+// ──────────────────────────────────────────────────────────────────────────────
+
 function setDur(min){
   document.getElementById("fDuration").value=min;
   document.querySelectorAll(".dur-btn").forEach(b=>{
