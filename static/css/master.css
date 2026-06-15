@@ -108,3 +108,12 @@ a[href="/login"] img{height:80px!important;width:auto!important;display:block!im
   z-index:5;
 }
 .slot-blocked {pointer-events: none;cursor: default;background: transparent;}
+
+/* CRM Stage 2: client block styles */
+.crm-section-title{font-family:var(--font-head);font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px}
+.crm-history-title{margin-top:14px}
+.crm-visit{font-size:13px;padding:5px 0;border-bottom:1px solid var(--border);color:var(--text)}
+.crm-visit:last-child{border-bottom:none}
+.crm-history-list{max-height:180px;overflow-y:auto}
+.crm-no-visits{font-size:12px;color:var(--hint);font-style:italic;padding:4px 0}
+.crm-no-client{font-size:12px;color:var(--hint);font-style:italic;padding:6px 0}
