@@ -48,6 +48,12 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .detail-row{display:flex;gap:10px;margin-bottom:8px}
 .dl{font-size:11px;color:var(--muted);min-width:80px;font-family:var(--font-head);text-transform:uppercase}
 .dv{font-size:14px;font-weight:500}
+.status-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-family:var(--font-head);font-size:11px;font-weight:700;line-height:1;border:1px solid transparent}
+.status-scheduled{color:var(--accent);background:var(--accent-light);border-color:rgba(0,200,180,.28)}
+.status-confirmed{color:#60A5FA;background:rgba(96,165,250,.14);border-color:rgba(96,165,250,.3)}
+.status-completed{color:#34D399;background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.3)}
+.status-cancelled{color:var(--danger);background:var(--danger-light);border-color:rgba(248,113,113,.3)}
+.status-no-show{color:#FBBF24;background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.32)}
 .mobile-wrap{display:none;flex-direction:column;flex:1;overflow:hidden}
 .scroll-calendar{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .scroll-calendar::-webkit-scrollbar{display:none}

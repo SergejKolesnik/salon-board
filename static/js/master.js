@@ -7,6 +7,20 @@ let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
 let editingId=null,mobileDay=new Date();
 let selectedClientId=null;
+const APPT_STATUS_LABELS={
+  scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
+  confirmed:"\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e",
+  completed:"\u0412\u0438\u043a\u043e\u043d\u0430\u043d\u043e",
+  cancelled:"\u0421\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e",
+  no_show:"\u041d\u0435 \u043f\u0440\u0438\u0439\u0448\u043e\u0432"
+};
+const APPT_STATUS_CLASSES={
+  scheduled:"status-scheduled",
+  confirmed:"status-confirmed",
+  completed:"status-completed",
+  cancelled:"status-cancelled",
+  no_show:"status-no-show"
+};
 
 function setView(n){
   viewDays=n;
@@ -26,6 +40,12 @@ function isoDate(d){const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
 function fmtDate(iso){const[y,m,day]=iso.split("-");return `${parseInt(day)} ${MONTHS[parseInt(m)-1]}`;}
 function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
+function statusValue(status){return status||"scheduled";}
+function statusLabel(status){return APPT_STATUS_LABELS[statusValue(status)]||APPT_STATUS_LABELS.scheduled;}
+function statusBadgeHtml(status){
+  const s=statusValue(status);
+  return `<span class="status-badge ${APPT_STATUS_CLASSES[s]||APPT_STATUS_CLASSES.scheduled}">${statusLabel(s)}</span>`;
+}
 async function loadWeek(){
   if(!masterId){
     const me=await fetch("/api/me").then(r=>r.json());
@@ -217,6 +237,7 @@ function openAddModal(date,time){
   document.getElementById("fTime").value=(time||"10:00").slice(0,5);
   document.getElementById("fDuration").value="60";
   document.getElementById("fNotes").value="";
+  var fs=document.getElementById("fStatus");if(fs)fs.value="scheduled";
   buildTimeGrid();updateTimeBtns();
   setDur(60);
   document.getElementById("modalOverlay").classList.remove("hidden");
@@ -227,7 +248,12 @@ function closeModal(){document.getElementById("modalOverlay").classList.add("hid
 async function openDetail(id){
 const a=appointments.find(x=>x.id==id);if(!a)return;
 document.getElementById("detailName").textContent=a.client_name;
-document.getElementById("detailBody").innerHTML='<div class="detail-row"><span class="dl">\u041f\u043e\u0441\u043b\u0443\u0433\u0430</span><span class="dv">'+a.service+'</span></div><div class="detail-row"><span class="dl">\u0414\u0430\u0442\u0430</span><span class="dv">'+fmtDate(a.appt_date)+'</span></div><div class="detail-row"><span class="dl">\u0427\u0430\u0441</span><span class="dv">'+a.start_time+', '+a.duration_min+' \u0445\u0432</span></div>'+(a.notes?'<div class="detail-row"><span class="dl">\u041d\u043e\u0442\u0430\u0442\u043a\u0438</span><span class="dv">'+a.notes+'</span></div>':'');
+document.getElementById("detailBody").innerHTML=
+'<div class="detail-row"><span class="dl">\u0421\u0442\u0430\u0442\u0443\u0441</span><span class="dv">'+statusBadgeHtml(a.status)+'</span></div>'
++'<div class="detail-row"><span class="dl">\u041f\u043e\u0441\u043b\u0443\u0433\u0430</span><span class="dv">'+a.service+'</span></div>'
++'<div class="detail-row"><span class="dl">\u0414\u0430\u0442\u0430</span><span class="dv">'+fmtDate(a.appt_date)+'</span></div>'
++'<div class="detail-row"><span class="dl">\u0427\u0430\u0441</span><span class="dv">'+a.start_time+', '+a.duration_min+' \u0445\u0432</span></div>'
++(a.notes?'<div class="detail-row"><span class="dl">\u041d\u043e\u0442\u0430\u0442\u043a\u0438</span><span class="dv">'+a.notes+'</span></div>':'');
 document.getElementById("detailEditBtn").onclick=function(){
 editingId=a.id;
 document.getElementById("modalTitle").textContent="\u0420\u0435\u0434\u0430\u0433\u0443\u0432\u0430\u0442\u0438";
@@ -238,6 +264,7 @@ document.getElementById("fDate").value=a.appt_date;
 document.getElementById("fTime").value=a.start_time;
 document.getElementById("fDuration").value=a.duration_min;
 document.getElementById("fNotes").value=a.notes||"";
+var fs=document.getElementById("fStatus");if(fs)fs.value=statusValue(a.status);
 closeDetail();
 document.getElementById("modalOverlay").classList.remove("hidden");
 };
@@ -286,7 +313,7 @@ function closeDetail(){document.getElementById("detailOverlay").classList.add("h
 document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
 document.getElementById("detailOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail();});
 async function saveAppt(){
-  const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null};
+  const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
   if(!body.client_name||!body.service){alert("Заповніть ім\u0027я і послугу");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
   const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -345,6 +372,7 @@ safeClick("detailEditBtn",function(){
   document.getElementById("fTime").value=a.start_time;
   document.getElementById("fDuration").value=a.duration_min;
   document.getElementById("fNotes").value=a.notes||"";
+  var fs=document.getElementById("fStatus");if(fs)fs.value=statusValue(a.status);
   closeDetail();
   document.getElementById("modalOverlay").classList.remove("hidden");
 });
