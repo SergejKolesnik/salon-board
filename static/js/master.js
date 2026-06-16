@@ -439,9 +439,9 @@ function ensureClientsDirectoryUi(){
     overlay.innerHTML=
       '<div class="modal clients-modal">'
       +'<h2>Клієнти</h2>'
-      +'<input id="clientsSearch" class="clients-search" type="search" placeholder="Пошук за ім\\\'ям, прізвищем або телефоном">'
+      +'<input id="clientsSearch" class="clients-search" type="search" placeholder="Пошук за ім&#39;ям, прізвищем або телефоном">'
       +'<div class="clients-table-wrap"><table class="clients-table">'
-      +'<thead><tr><th>Прізвище</th><th>Ім\\\'я</th><th>Телефон</th><th>Візитів</th><th>Останній візит</th></tr></thead>'
+      +'<thead><tr><th>Прізвище</th><th>Ім&#39;я</th><th>Телефон</th><th>Візитів</th><th>Останній візит</th></tr></thead>'
       +'<tbody id="clientsTableBody"><tr><td colspan="5" class="clients-empty">Немає даних</td></tr></tbody>'
       +'</table></div>'
       +'<div class="modal-footer"><button class="btn" onclick="closeClientsModal()">Закрити</button></div>'
