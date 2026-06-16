@@ -8,6 +8,7 @@ let weekStart=getMonday(new Date());
 let editingId=null,mobileDay=new Date();
 let selectedClientId=null;
 let shouldSmartScrollDesktop=true;
+let clientsDirectory=[];
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
   confirmed:"\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e",
@@ -417,6 +418,90 @@ safeClick("detailEditBtn",function(){
   closeDetail();
   document.getElementById("modalOverlay").classList.remove("hidden");
 });
+function ensureClientsDirectoryUi(){
+  if(!document.getElementById("clientsBtn")){
+    const topbar=document.querySelector(".topbar");
+    const spacer=document.querySelector(".topbar .spacer");
+    if(topbar&&spacer){
+      const btn=document.createElement("button");
+      btn.id="clientsBtn";
+      btn.className="clients-btn";
+      btn.type="button";
+      btn.textContent="👥 Клієнти";
+      btn.onclick=openClientsModal;
+      topbar.insertBefore(btn,spacer.nextSibling);
+    }
+  }
+  if(!document.getElementById("clientsOverlay")){
+    const overlay=document.createElement("div");
+    overlay.id="clientsOverlay";
+    overlay.className="overlay hidden";
+    overlay.innerHTML=
+      '<div class="modal clients-modal">'
+      +'<h2>Клієнти</h2>'
+      +'<input id="clientsSearch" class="clients-search" type="search" placeholder="Пошук за ім\\\'ям, прізвищем або телефоном">'
+      +'<div class="clients-table-wrap"><table class="clients-table">'
+      +'<thead><tr><th>Прізвище</th><th>Ім\\\'я</th><th>Телефон</th><th>Візитів</th><th>Останній візит</th></tr></thead>'
+      +'<tbody id="clientsTableBody"><tr><td colspan="5" class="clients-empty">Немає даних</td></tr></tbody>'
+      +'</table></div>'
+      +'<div class="modal-footer"><button class="btn" onclick="closeClientsModal()">Закрити</button></div>'
+      +'</div>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click",function(e){if(e.target===this)closeClientsModal();});
+    const search=overlay.querySelector("#clientsSearch");
+    if(search)search.addEventListener("input",renderClientsTable);
+  }
+}
+async function openClientsModal(){
+  ensureClientsDirectoryUi();
+  const overlay=document.getElementById("clientsOverlay");
+  const search=document.getElementById("clientsSearch");
+  if(search)search.value="";
+  overlay.classList.remove("hidden");
+  const body=document.getElementById("clientsTableBody");
+  if(body)body.innerHTML='<tr><td colspan="5" class="clients-empty">Завантаження...</td></tr>';
+  try{
+    clientsDirectory=await fetch("/api/clients").then(r=>r.json());
+  }catch(e){
+    clientsDirectory=[];
+    if(body)body.innerHTML='<tr><td colspan="5" class="clients-empty">Не вдалося завантажити клієнтів</td></tr>';
+    return;
+  }
+  renderClientsTable();
+  setTimeout(()=>{if(search)search.focus();},50);
+}
+function closeClientsModal(){
+  const overlay=document.getElementById("clientsOverlay");
+  if(overlay)overlay.classList.add("hidden");
+}
+function renderClientsTable(){
+  const body=document.getElementById("clientsTableBody");
+  if(!body)return;
+  const q=(document.getElementById("clientsSearch")||{value:""}).value.trim().toLowerCase();
+  const list=clientsDirectory.filter(c=>{
+    const hay=[c.first_name||"",c.last_name||"",c.phone||""].join(" ").toLowerCase();
+    return !q||hay.includes(q);
+  });
+  if(!list.length){
+    body.innerHTML='<tr><td colspan="5" class="clients-empty">Клієнтів не знайдено</td></tr>';
+    return;
+  }
+  body.innerHTML=list.map(c=>
+    '<tr onclick="alert('+c.id+')">'
+    +'<td>'+escapeHtml(c.last_name||"")+'</td>'
+    +'<td>'+escapeHtml(c.first_name||"")+'</td>'
+    +'<td>'+escapeHtml(c.phone||"")+'</td>'
+    +'<td>'+Number(c.visits_count||0)+'</td>'
+    +'<td>'+escapeHtml(c.last_visit||"—")+'</td>'
+    +'</tr>'
+  ).join("");
+}
+function escapeHtml(v){
+  return String(v).replace(/[&<>"']/g,function(ch){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch];
+  });
+}
+ensureClientsDirectoryUi();
 loadWeek();
 // ─── CRM Stage 3: client autocomplete ─────────────────────────────────────
 let _clientSearchTimer=null;

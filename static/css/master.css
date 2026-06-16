@@ -6,6 +6,8 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:88px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
 .topbar img{height:48px;width:auto}
 .spacer{flex:1}
+.clients-btn{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;cursor:pointer;font-family:var(--font-head);font-size:13px;font-weight:700;color:var(--text)}
+.clients-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
 .date-nav{display:flex;align-items:center;gap:8px;padding:12px 20px;flex-shrink:0;background:var(--surface2);border-bottom:1px solid var(--border)}
 .date-nav button{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;cursor:pointer;font-family:var(--font);font-size:13px;color:var(--text)}
 .today-btn{background:var(--accent)!important;color:#121214!important;border-color:var(--accent)!important;font-weight:700!important}
@@ -36,6 +38,16 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .overlay.hidden{display:none}
 .modal{background:var(--surface);border-radius:var(--radius);padding:24px;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.6);border:1px solid var(--border)}
 .modal h2{font-family:var(--font-head);font-size:16px;font-weight:700;margin-bottom:16px}
+.clients-modal{max-width:820px}
+.clients-search{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--bg);color:var(--text);outline:none;margin-bottom:12px}
+.clients-search:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,200,180,.15)}
+.clients-table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.clients-table{width:100%;border-collapse:collapse;font-size:13px}
+.clients-table th{position:sticky;top:0;background:var(--surface2);color:var(--muted);font-family:var(--font-head);font-size:11px;text-align:left;text-transform:uppercase;letter-spacing:.3px;z-index:1}
+.clients-table th,.clients-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.clients-table tbody tr{cursor:pointer}
+.clients-table tbody tr:hover{background:var(--accent-light)}
+.clients-empty{text-align:center;color:var(--hint);font-style:italic}
 .form-row{margin-bottom:12px}
 .form-row label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;font-family:var(--font-head);text-transform:uppercase;letter-spacing:.3px}
 .form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--bg);color:var(--text);outline:none;transition:border-color .12s}

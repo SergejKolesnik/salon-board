@@ -535,6 +535,29 @@ def breaks_range(master_id: int, from_date: str = None, to_date: str = None):
 
 # ─── CRM: CLIENTS ──────────────────────────────────────────────────────────────
 
+@app.get("/api/clients")
+def list_clients(token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "РќРµ Р°РІС‚РѕСЂРёР·РѕРІР°РЅРѕ")
+    rows = turso("""
+        SELECT c.id, c.first_name, c.last_name, c.phone,
+               COUNT(a.id) as visits_count,
+               MAX(a.appt_date) as last_visit
+        FROM clients c
+        LEFT JOIN appointments a ON a.client_id = c.id
+        GROUP BY c.id, c.first_name, c.last_name, c.phone
+        ORDER BY last_visit DESC
+    """)
+    return [{
+        "id": int(r["id"]),
+        "first_name": r.get("first_name", ""),
+        "last_name": r.get("last_name", ""),
+        "phone": r.get("phone", ""),
+        "visits_count": int(r.get("visits_count") or 0),
+        "last_visit": r.get("last_visit") or "",
+    } for r in rows]
+
 @app.get("/api/clients/search")
 def search_clients(q: str = "", token: str = Cookie(default=None)):
     sess = get_session(token)
