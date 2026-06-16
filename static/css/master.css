@@ -10,10 +10,10 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .date-nav button{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;cursor:pointer;font-family:var(--font);font-size:13px;color:var(--text)}
 .today-btn{background:var(--accent)!important;color:#121214!important;border-color:var(--accent)!important;font-weight:700!important}
 .week-label{font-family:var(--font-head);font-size:15px;font-weight:700;color:var(--text)}
-.content{flex:1;overflow:auto;padding:16px 20px}
-.week-wrap{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow-x:auto}
+.content{flex:1;overflow:hidden;padding:16px 20px;min-height:0}
+.week-wrap{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);position:relative;overflow:auto;height:100%}
 .week-grid{display:grid;grid-template-columns:52px repeat(7,1fr)}
-.wh{padding:10px 6px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:2}
+.wh{padding:10px 6px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:20}
 .wh:last-child{border-right:none}
 .wh-day{font-family:var(--font-head);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
 .wh-date{font-family:var(--font-head);font-size:20px;font-weight:800;color:var(--text)}

@@ -7,6 +7,7 @@ let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
 let editingId=null,mobileDay=new Date();
 let selectedClientId=null;
+let shouldSmartScrollDesktop=true;
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
   confirmed:"\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e",
@@ -23,6 +24,7 @@ const APPT_STATUS_CLASSES={
 };
 
 function setView(n){
+  shouldSmartScrollDesktop=true;
   viewDays=n;
   if(n===1) periodStart=new Date(mobileDay);
   else if(n===3){ const d=new Date(mobileDay); d.setDate(d.getDate()-1); periodStart=d; }
@@ -34,7 +36,7 @@ function setView(n){
   });
   loadWeek();
 }
-function changePeriod(d){periodStart=addDays(periodStart,d*viewDays);weekStart=new Date(periodStart);loadWeek();}
+function changePeriod(d){shouldSmartScrollDesktop=true;periodStart=addDays(periodStart,d*viewDays);weekStart=new Date(periodStart);loadWeek();}
 function getMonday(d){const r=new Date(d),day=r.getDay(),diff=r.getDate()-day+(day===0?-6:1);r.setDate(diff);r.setHours(0,0,0,0);return r;}
 function isoDate(d){const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,"0"),dy=String(d.getDate()).padStart(2,"0");return y+"-"+mo+"-"+dy;}
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
@@ -149,11 +151,30 @@ function renderGrid(days,today){
   });
 
   g.innerHTML=h;
+  scrollDesktopToRelevantTime(days);
 
   if(viewDays===7){
     const wrap=document.querySelector(".week-wrap");
     if(wrap)wrap.scrollLeft=0;
   }
+}
+function scrollDesktopToRelevantTime(days){
+  if(!shouldSmartScrollDesktop||window.innerWidth<=768)return;
+  const wrap=document.querySelector(".week-wrap");
+  if(!wrap)return;
+  const visibleDates=days.map(d=>isoDate(d));
+  const dayAppointments=appointments.filter(a=>visibleDates.includes(a.appt_date));
+  let targetMin=12*60;
+  if(dayAppointments.length){
+    const minStart=Math.min(...dayAppointments.map(a=>toMin(a.start_time)));
+    targetMin=Math.max(9*60,minStart-60);
+  }
+  const slotHeight=55;
+  const headerHeight=58;
+  const startMin=9*60;
+  const slotIndex=Math.max(0,Math.floor((targetMin-startMin)/30));
+  wrap.scrollTop=headerHeight+slotIndex*slotHeight;
+  shouldSmartScrollDesktop=false;
 }
 function renderMobileDays(days,today){}
 function renderMobileList(){}
@@ -209,8 +230,9 @@ function renderScrollCalendar(){
   fab.onclick=()=>openAddModal(isoDate(periodStart),"10:00");
   document.querySelector(".mobile-wrap").appendChild(fab);
 }
-function changeWeek(d){weekStart=addDays(weekStart,d*7);loadWeek();}
+function changeWeek(d){shouldSmartScrollDesktop=true;weekStart=addDays(weekStart,d*7);loadWeek();}
 function goToday(){
+  shouldSmartScrollDesktop=true;
   periodStart=viewDays===7?getMonday(new Date()):new Date();
   weekStart=new Date(periodStart);
   mobileDay=new Date();
@@ -223,6 +245,7 @@ function openDatePicker(){
 }
 function goToDate(iso){
   if(!iso)return;
+  shouldSmartScrollDesktop=true;
   periodStart=new Date(iso+"T12:00:00");
   weekStart=new Date(periodStart);
   mobileDay=new Date(periodStart);
@@ -324,11 +347,13 @@ async function saveAppt(){
   if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
   closeModal();showToast(editingId?"Оновлено":"Збережено");
   mobileDay=new Date(body.appt_date+"T12:00:00");
+  shouldSmartScrollDesktop=false;
   await loadWeek();
 }
 async function deleteAppt(){
   if(!editingId||!confirm("Видалити запис?"))return;
   await fetch(`/api/appointments/${editingId}`,{method:"DELETE"});
+  shouldSmartScrollDesktop=false;
   closeModal();showToast("Видалено");await loadWeek();
 }
 function showToast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2500);}
