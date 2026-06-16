@@ -184,6 +184,13 @@ class MasterRoleIn(BaseModel):
     master_id: int
     template_id: int
 
+class ClientUpdate(BaseModel):
+    first_name: str = ""
+    last_name: str = ""
+    phone: str = ""
+    birthday: str = ""
+    notes: str = ""
+
 # ─── APP ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Cosmo Schedule")
@@ -599,6 +606,20 @@ def get_client(client_id: int, token: str = Cookie(default=None)):
         "created_at": r.get("created_at", ""),
         "updated_at": r.get("updated_at", ""),
     }
+
+@app.put("/api/client/{client_id}")
+def update_client(client_id: int, data: ClientUpdate, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "РќРµ Р°РІС‚РѕСЂРёР·РѕРІР°РЅРѕ")
+    rows = turso("SELECT id FROM clients WHERE id=?", [client_id])
+    if not rows:
+        raise HTTPException(404, "РљР»С–С”РЅС‚Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ")
+    turso_exec(
+        "UPDATE clients SET first_name=?, last_name=?, phone=?, birthday=?, notes=?, updated_at=datetime('now') WHERE id=?",
+        [data.first_name, data.last_name, data.phone, data.birthday, data.notes, client_id]
+    )
+    return {"ok": True, "id": client_id}
 
 @app.get("/api/client/{client_id}/history")
 def get_client_history(client_id: int, token: str = Cookie(default=None)):

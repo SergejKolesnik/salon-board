@@ -9,6 +9,8 @@ let editingId=null,mobileDay=new Date();
 let selectedClientId=null;
 let shouldSmartScrollDesktop=true;
 let clientsDirectory=[];
+let currentClientCard=null;
+let currentClientHistory=[];
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
   confirmed:"\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e",
@@ -451,6 +453,25 @@ function ensureClientsDirectoryUi(){
     const search=overlay.querySelector("#clientsSearch");
     if(search)search.addEventListener("input",renderClientsTable);
   }
+  if(!document.getElementById("clientCardOverlay")){
+    const cardOverlay=document.createElement("div");
+    cardOverlay.id="clientCardOverlay";
+    cardOverlay.className="overlay hidden";
+    cardOverlay.innerHTML=
+      '<div class="modal client-card-modal">'
+      +'<h2 id="clientCardTitle">Картка клієнта</h2>'
+      +'<div id="clientCardBody"></div>'
+      +'<div class="crm-section-title crm-history-title">Останні 10 візитів</div>'
+      +'<div id="clientCardHistory" class="client-card-history"></div>'
+      +'<div class="modal-footer">'
+      +'<button class="btn" onclick="closeClientCardModal()">Закрити</button>'
+      +'<button class="btn btn-primary" id="clientCardEditBtn" onclick="editClientCard()">Редагувати</button>'
+      +'<button class="btn btn-primary hidden" id="clientCardSaveBtn" onclick="saveClientCard()">Зберегти</button>'
+      +'</div>'
+      +'</div>';
+    document.body.appendChild(cardOverlay);
+    cardOverlay.addEventListener("click",function(e){if(e.target===this)closeClientCardModal();});
+  }
 }
 async function openClientsModal(){
   ensureClientsDirectoryUi();
@@ -487,7 +508,7 @@ function renderClientsTable(){
     return;
   }
   body.innerHTML=list.map(c=>
-    '<tr onclick="alert('+c.id+')">'
+    '<tr onclick="openClientCardModal('+c.id+')">'
     +'<td>'+escapeHtml(c.last_name||"")+'</td>'
     +'<td>'+escapeHtml(c.first_name||"")+'</td>'
     +'<td>'+escapeHtml(c.phone||"")+'</td>'
@@ -495,6 +516,94 @@ function renderClientsTable(){
     +'<td>'+escapeHtml(c.last_visit||"—")+'</td>'
     +'</tr>'
   ).join("");
+}
+async function openClientCardModal(id){
+  ensureClientsDirectoryUi();
+  const overlay=document.getElementById("clientCardOverlay");
+  const body=document.getElementById("clientCardBody");
+  const history=document.getElementById("clientCardHistory");
+  if(body)body.innerHTML='<div class="clients-empty">Завантаження...</div>';
+  if(history)history.innerHTML="";
+  overlay.classList.remove("hidden");
+  try{
+    const data=await Promise.all([
+      fetch("/api/client/"+id).then(r=>r.json()),
+      fetch("/api/client/"+id+"/history").then(r=>r.json())
+    ]);
+    currentClientCard=data[0];
+    currentClientHistory=Array.isArray(data[1])?data[1]:[];
+    renderClientCard(false);
+  }catch(e){
+    currentClientCard=null;
+    currentClientHistory=[];
+    if(body)body.innerHTML='<div class="clients-empty">Не вдалося завантажити картку клієнта</div>';
+  }
+}
+function closeClientCardModal(){
+  const overlay=document.getElementById("clientCardOverlay");
+  if(overlay)overlay.classList.add("hidden");
+}
+function renderClientCard(editing){
+  if(!currentClientCard)return;
+  const c=currentClientCard;
+  const title=document.getElementById("clientCardTitle");
+  const body=document.getElementById("clientCardBody");
+  const history=document.getElementById("clientCardHistory");
+  const editBtn=document.getElementById("clientCardEditBtn");
+  const saveBtn=document.getElementById("clientCardSaveBtn");
+  const fullName=((c.first_name||"")+" "+(c.last_name||"")).trim()||"Картка клієнта";
+  if(title)title.textContent=fullName;
+  if(editBtn)editBtn.classList.toggle("hidden",editing);
+  if(saveBtn)saveBtn.classList.toggle("hidden",!editing);
+  if(body){
+    if(editing){
+      body.innerHTML=
+        '<div class="client-card-grid">'
+        +clientCardInput("first_name","Ім'я",c.first_name||"")
+        +clientCardInput("last_name","Прізвище",c.last_name||"")
+        +clientCardInput("phone","Телефон",c.phone||"")
+        +clientCardInput("birthday","Дата народження",c.birthday||"")
+        +'<label class="client-card-field client-card-notes"><span>Нотатки</span><textarea id="cc_notes" rows="4">'+escapeHtml(c.notes||"")+'</textarea></label>'
+        +'</div>';
+    }else{
+      body.innerHTML=
+        '<div class="detail-row"><span class="dl">Ім&#39;я</span><span class="dv">'+escapeHtml(c.first_name||"")+'</span></div>'
+        +'<div class="detail-row"><span class="dl">Прізвище</span><span class="dv">'+escapeHtml(c.last_name||"")+'</span></div>'
+        +'<div class="detail-row"><span class="dl">Телефон</span><span class="dv">'+escapeHtml(c.phone||"")+'</span></div>'
+        +'<div class="detail-row"><span class="dl">Дата народження</span><span class="dv">'+escapeHtml(c.birthday||"Не вказано")+'</span></div>'
+        +'<div class="detail-row"><span class="dl">Нотатки</span><span class="dv">'+escapeHtml(c.notes||"")+'</span></div>';
+    }
+  }
+  if(history){
+    const visits=currentClientHistory.slice(0,10);
+    if(!visits.length){
+      history.innerHTML='<div class="crm-no-visits">Попередніх візитів немає</div>';
+    }else{
+      history.innerHTML='<table class="client-history-table"><thead><tr><th>Дата</th><th>Послуга</th><th>Тривалість</th></tr></thead><tbody>'
+        +visits.map(v=>'<tr><td>'+escapeHtml(v.appt_date||"")+'</td><td>'+escapeHtml(v.service||"")+'</td><td>'+Number(v.duration_min||0)+' хв</td></tr>').join("")
+        +'</tbody></table>';
+    }
+  }
+}
+function clientCardInput(id,label,value){
+  return '<label class="client-card-field"><span>'+label+'</span><input id="cc_'+id+'" value="'+escapeHtml(value)+'"></label>';
+}
+function editClientCard(){renderClientCard(true);}
+async function saveClientCard(){
+  if(!currentClientCard)return;
+  const payload={
+    first_name:(document.getElementById("cc_first_name")||{value:""}).value.trim(),
+    last_name:(document.getElementById("cc_last_name")||{value:""}).value.trim(),
+    phone:(document.getElementById("cc_phone")||{value:""}).value.trim(),
+    birthday:(document.getElementById("cc_birthday")||{value:""}).value.trim(),
+    notes:(document.getElementById("cc_notes")||{value:""}).value.trim()
+  };
+  const res=await fetch("/api/client/"+currentClientCard.id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  if(!res.ok){alert("Не вдалося зберегти клієнта");return;}
+  currentClientCard={...currentClientCard,...payload};
+  clientsDirectory=clientsDirectory.map(c=>c.id===currentClientCard.id?{...c,...payload}:c);
+  renderClientsTable();
+  renderClientCard(false);
 }
 function escapeHtml(v){
   return String(v).replace(/[&<>"']/g,function(ch){
