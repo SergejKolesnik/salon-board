@@ -95,18 +95,31 @@ function renderAll(){
 
 function renderGrid(days,today){
   const g=document.getElementById("weekGrid");
-  g.style.gridTemplateColumns=`52px repeat(${days.length},1fr)`;
+  const columns=`52px repeat(${days.length},1fr)`;
+  const wrap=document.querySelector(".week-wrap");
+  let header=document.getElementById("desktopWeekHeader");
+  if(!header&&wrap){
+    header=document.createElement("div");
+    header.id="desktopWeekHeader";
+    header.className="desktop-week-header";
+    wrap.insertBefore(header,g);
+  }
+  g.style.gridTemplateColumns=columns;
+  if(header){
+    header.style.gridTemplateColumns=columns;
+    let headerHtml=`<div class="desktop-week-header-spacer"></div>`;
+    days.forEach(d=>{
+      const iso=isoDate(d);
+      const iT=iso===today;
+      headerHtml+=`<div class="wh${iT?" today":""}">
+        <div class="wh-day">${DAYS[d.getDay()]}</div>
+        <div class="wh-date">${d.getDate()}</div>
+      </div>`;
+    });
+    header.innerHTML=headerHtml;
+  }
 
-  let h=`<div class="wh"></div>`;
-
-  days.forEach(d=>{
-    const iso=isoDate(d);
-    const iT=iso===today;
-    h+=`<div class="wh${iT?" today":""}">
-      <div class="wh-day">${DAYS[d.getDay()]}</div>
-      <div class="wh-date">${d.getDate()}</div>
-    </div>`;
-  });
+  let h=``;
 
   const occupied={};
 
@@ -154,7 +167,6 @@ function renderGrid(days,today){
   scrollDesktopToRelevantTime(days);
 
   if(viewDays===7){
-    const wrap=document.querySelector(".week-wrap");
     if(wrap)wrap.scrollLeft=0;
   }
 }
