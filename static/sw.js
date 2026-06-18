@@ -1,4 +1,4 @@
-const CACHE_NAME = "salon-board-shell-v3";
+const CACHE_NAME = "salon-board-shell-v4";
 const SHELL_URLS = [
   "/manifest.json",
   "/api/icon",

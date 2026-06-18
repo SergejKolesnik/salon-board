@@ -12,6 +12,7 @@ let clientsDirectory=[];
 let currentClientCard=null;
 let currentClientHistory=[];
 let didInitialMobileFastLoad=false;
+let pendingMobileScrollIso=isoDate(new Date());
 let scheduleStatusTimer=null;
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
@@ -35,13 +36,14 @@ function setView(n){
   else if(n===3){ const d=new Date(mobileDay); d.setDate(d.getDate()-1); periodStart=d; }
   else periodStart=getMonday(new Date());
   weekStart=new Date(periodStart);
+  pendingMobileScrollIso=isoDate(mobileDay);
   ["v1","v3","v7"].forEach(id=>{
     const el=document.getElementById(id);
     if(el){el.style.background=id==="v"+n?"var(--accent)":"var(--surface)";el.style.color=id==="v"+n?"#121214":"var(--muted)";el.style.borderColor=id==="v"+n?"var(--accent)":"var(--border)";}
   });
   loadWeek();
 }
-function changePeriod(d){shouldSmartScrollDesktop=true;periodStart=addDays(periodStart,d*viewDays);weekStart=new Date(periodStart);loadWeek();}
+function changePeriod(d){shouldSmartScrollDesktop=true;periodStart=addDays(periodStart,d*viewDays);weekStart=new Date(periodStart);mobileDay=new Date(periodStart);pendingMobileScrollIso=isoDate(periodStart);loadWeek();}
 function getMonday(d){const r=new Date(d),day=r.getDay(),diff=r.getDate()-day+(day===0?-6:1);r.setDate(diff);r.setHours(0,0,0,0);return r;}
 function isoDate(d){const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,"0"),dy=String(d.getDate()).padStart(2,"0");return y+"-"+mo+"-"+dy;}
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
@@ -168,6 +170,11 @@ function renderAll(){
   document.getElementById("weekLabel").textContent=viewDays===1?`${DAYS[days[0].getDay()]}, ${fmtDate(isoDate(days[0]))}`:(`${f} — ${t}`);
   renderGrid(days,today);
   renderScrollCalendar();
+  if(pendingMobileScrollIso){
+    const iso=pendingMobileScrollIso;
+    pendingMobileScrollIso=null;
+    setTimeout(()=>scrollMobileToRelevantTime(iso),80);
+  }
 }
 
 function renderGrid(days,today){
@@ -272,6 +279,20 @@ function renderMobileList(){}
 function renderScrollCalendar(){
   const cal=document.getElementById("scrollCal");
   if(!cal)return;
+  let keepMobileIso=null,keepMobileTop=0;
+  if(!pendingMobileScrollIso){
+    const calRect=cal.getBoundingClientRect();
+    let best=null,bestDist=Infinity;
+    cal.querySelectorAll(".cal-day-col[data-date]").forEach(col=>{
+      const dist=Math.abs(col.getBoundingClientRect().left-calRect.left);
+      if(dist<bestDist){best=col;bestDist=dist;}
+    });
+    if(best){
+      keepMobileIso=best.dataset.date;
+      const slots=best.querySelector(".cal-slots");
+      keepMobileTop=slots?slots.scrollTop:0;
+    }
+  }
   const today=isoDate(new Date());
   // Show 14 days starting from periodStart - 1 (so current day is in middle column)
   const startDay=addDays(periodStart,-1);
@@ -300,17 +321,11 @@ function renderScrollCalendar(){
       }
       return `<div class="cal-slot" onclick="openAddOnSlot('${iso}','${hr}')"><div class="cal-slot-time">${hr}</div><div class="cal-slot-content">${inner}</div></div>`;
     }).join("");
-    return `<div class="cal-day-col${isToday?" today":""}">
+    return `<div class="cal-day-col${isToday?" today":""}" data-date="${iso}">
       <div class="cal-day-header"><div class="cal-day-name">${DAYS[d.getDay()]}</div><div class="cal-day-num">${d.getDate()}</div></div>
       <div class="cal-slots">${slots}</div>
     </div>`;
   }).join("");
-
-  // Scroll to today (3rd column = index 1 which is periodStart)
-  setTimeout(()=>{
-    const cols=cal.querySelectorAll(".cal-day-col");
-    if(cols[1]) cols[1].scrollIntoView({behavior:"instant",inline:"start"});
-  },50);
 
   // Add FAB
   const fab=document.createElement("button");
@@ -319,13 +334,44 @@ function renderScrollCalendar(){
   fab.textContent="+ Новий запис";
   fab.onclick=()=>openAddModal(isoDate(periodStart),"10:00");
   document.querySelector(".mobile-wrap").appendChild(fab);
+  if(keepMobileIso){
+    setTimeout(()=>{
+      const col=cal.querySelector(`.cal-day-col[data-date="${keepMobileIso}"]`);
+      if(!col)return;
+      col.scrollIntoView({behavior:"instant",inline:"start"});
+      const slots=col.querySelector(".cal-slots");
+      if(slots)slots.scrollTop=keepMobileTop;
+    },50);
+  }
 }
-function changeWeek(d){shouldSmartScrollDesktop=true;weekStart=addDays(weekStart,d*7);loadWeek();}
+function scrollMobileToRelevantTime(targetIso){
+  if(window.innerWidth>768)return;
+  const cal=document.getElementById("scrollCal");
+  if(!cal||!targetIso)return;
+  const col=cal.querySelector(`.cal-day-col[data-date="${targetIso}"]`);
+  if(!col)return;
+  col.scrollIntoView({behavior:"instant",inline:"start"});
+  const calSlots=col.querySelector(".cal-slots");
+  if(!calSlots)return;
+  const dayAppointments=appointments.filter(a=>a.appt_date===targetIso);
+  const dayBreaks=breaks.filter(b=>b.break_date===targetIso);
+  let targetMin=12*60;
+  const starts=[];
+  dayAppointments.forEach(a=>starts.push(toMin(a.start_time)));
+  dayBreaks.forEach(b=>starts.push(toMin(b.start_time)));
+  if(starts.length)targetMin=Math.max(9*60,Math.min(...starts)-60);
+  const slotHeight=52;
+  const startMin=9*60;
+  const slotIndex=Math.max(0,Math.floor((targetMin-startMin)/30));
+  calSlots.scrollTop=slotIndex*slotHeight;
+}
+function changeWeek(d){shouldSmartScrollDesktop=true;weekStart=addDays(weekStart,d*7);periodStart=new Date(weekStart);mobileDay=new Date(periodStart);pendingMobileScrollIso=isoDate(periodStart);loadWeek();}
 function goToday(){
   shouldSmartScrollDesktop=true;
   periodStart=viewDays===7?getMonday(new Date()):new Date();
   weekStart=new Date(periodStart);
   mobileDay=new Date();
+  pendingMobileScrollIso=isoDate(mobileDay);
   loadWeek();
 }
 function openDatePicker(){
@@ -339,6 +385,7 @@ function goToDate(iso){
   periodStart=new Date(iso+"T12:00:00");
   weekStart=new Date(periodStart);
   mobileDay=new Date(periodStart);
+  pendingMobileScrollIso=iso;
   loadWeek();
 }
 function setMobileDay(iso){mobileDay=new Date(iso+"T12:00:00");}
@@ -505,6 +552,11 @@ async function saveAppt(){
     if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
     closeModal();showToast(editingBreakId?"Оновлено":"Збережено");
     mobileDay=new Date(body.break_date+"T12:00:00");
+    if(window.innerWidth<=768){
+      periodStart=new Date(body.break_date+"T12:00:00");
+      weekStart=new Date(periodStart);
+      pendingMobileScrollIso=body.break_date;
+    }
     shouldSmartScrollDesktop=false;
     await loadWeek();
     return;
@@ -516,6 +568,11 @@ async function saveAppt(){
   if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
   closeModal();showToast(editingId?"Оновлено":"Збережено");
   mobileDay=new Date(body.appt_date+"T12:00:00");
+  if(window.innerWidth<=768){
+    periodStart=new Date(body.appt_date+"T12:00:00");
+    weekStart=new Date(periodStart);
+    pendingMobileScrollIso=body.appt_date;
+  }
   shouldSmartScrollDesktop=false;
   await loadWeek();
 }
