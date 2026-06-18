@@ -343,16 +343,18 @@ function goToDate(iso){
 }
 function setMobileDay(iso){mobileDay=new Date(iso+"T12:00:00");}
 function rowOf(id){const el=document.getElementById(id);return el?el.closest(".form-row"):null;}
+function toggleEventType(){updateEventTypeUi();}
 function ensureEventTypeUi(){
-  if(document.getElementById("fEventType"))return;
+  const existingType=document.getElementById("fEventType");
+  if(existingType){existingType.onchange=toggleEventType;return;}
   const clientRow=rowOf("fClient");
   if(clientRow){
     const typeRow=document.createElement("div");
     typeRow.className="form-row";
     typeRow.id="eventTypeRow";
-    typeRow.innerHTML='<label>Тип події</label><select id="fEventType"><option value="appointment">Запис клієнта</option><option value="break">Зайнятий час</option></select>';
+    typeRow.innerHTML='<label>Тип події</label><select id="fEventType" onchange="toggleEventType()"><option value="appointment">Запис клієнта</option><option value="break">Зайнятий час</option></select>';
     clientRow.parentNode.insertBefore(typeRow,clientRow);
-    document.getElementById("fEventType").addEventListener("change",updateEventTypeUi);
+    document.getElementById("fEventType").addEventListener("change",toggleEventType);
   }
   const serviceRow=rowOf("fService");
   if(serviceRow){
