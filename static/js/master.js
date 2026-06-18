@@ -685,6 +685,11 @@ function escapeHtml(v){
   });
 }
 ensureClientsDirectoryUi();
+if("serviceWorker" in navigator){
+  window.addEventListener("load",function(){
+    navigator.serviceWorker.register("/static/sw.js",{scope:"/"}).catch(function(){});
+  });
+}
 loadWeek();
 // ─── CRM Stage 3: client autocomplete ─────────────────────────────────────
 let _clientSearchTimer=null;

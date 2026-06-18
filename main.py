@@ -197,6 +197,13 @@ app = FastAPI(title="Cosmo Schedule")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 init_db()
 
+@app.middleware("http")
+async def add_service_worker_scope_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/static/sw.js":
+        response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
 # ─── AUTH HELPERS ──────────────────────────────────────────────────────────────
 
 def get_setting(key: str) -> str:
