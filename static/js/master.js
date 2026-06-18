@@ -11,6 +11,8 @@ let shouldSmartScrollDesktop=true;
 let clientsDirectory=[];
 let currentClientCard=null;
 let currentClientHistory=[];
+let didInitialMobileFastLoad=false;
+let scheduleStatusTimer=null;
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
   confirmed:"\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e",
@@ -51,37 +53,109 @@ function statusBadgeHtml(status){
   const s=statusValue(status);
   return `<span class="status-badge ${APPT_STATUS_CLASSES[s]||APPT_STATUS_CLASSES.scheduled}">${statusLabel(s)}</span>`;
 }
-async function loadWeek(){
-  if(!masterId){
-    const me=await fetch("/api/me").then(r=>r.json());
-    if(me.master_id) masterId=me.master_id;
-    else { const ms=await fetch("/api/masters").then(r=>r.json());if(ms.length)masterId=ms[0].id; }
-  }
-  if(!masterId)return;
-  // Оновлюємо ім'я майстра в хедері
-  if(!window._masterName){
-    const me=await fetch("/api/me").then(r=>r.json());
-    if(me.name){window._masterName=me.name;const b=document.getElementById("masterNameBadge");if(b)b.textContent=me.name;}
-  }
-  // Оновлюємо кнопку Сьогодні
-  (function(){
-    const now=new Date();
-    const days=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
-    const months=["січ","лют","бер","кві","тра","чер","лип","сер","вер","жов","лис","гру"];
-    const btn=document.getElementById("todayBtn");
-    if(btn) btn.innerHTML="&#128197; "+days[now.getDay()]+", "+now.getDate()+" "+months[now.getMonth()];
-  })();
-  if(!services.length){services=await fetch("/api/services").then(r=>r.json());updateDatalist();}
-  const isMobile=window.innerWidth<=640;
-  const loadDays=isMobile?14:viewDays;
-  const loadStart=isMobile?addDays(periodStart,-1):periodStart;
-  const days=Array.from({length:loadDays},(_,i)=>isoDate(addDays(loadStart,i)));
-  const from=days[0],to=days[days.length-1];
-  const[ap,br]=await Promise.all([
-    fetch(`/api/appointments/range?master_id=${masterId}&from_date=${from}&to_date=${to}`).then(r=>r.json()),
-    fetch(`/api/breaks/range?master_id=${masterId}&from_date=${from}&to_date=${to}`).then(r=>r.json()),
+function ensureScheduleStatusUi(){
+  let el=document.getElementById("scheduleStatus");
+  if(el)return el;
+  el=document.createElement("div");
+  el.id="scheduleStatus";
+  el.className="schedule-status hidden";
+  el.textContent="Завантаження розкладу...";
+  document.body.appendChild(el);
+  return el;
+}
+function showScheduleStatus(msg,isError){
+  const el=ensureScheduleStatusUi();
+  el.textContent=msg;
+  el.classList.toggle("error",!!isError);
+  el.classList.remove("hidden");
+}
+function hideScheduleStatus(){
+  if(scheduleStatusTimer){clearTimeout(scheduleStatusTimer);scheduleStatusTimer=null;}
+  const el=document.getElementById("scheduleStatus");
+  if(el)el.classList.add("hidden");
+}
+function startScheduleSlowTimer(){
+  if(scheduleStatusTimer)clearTimeout(scheduleStatusTimer);
+  scheduleStatusTimer=setTimeout(function(){
+    showScheduleStatus("Інтернет повільний, дані завантажуються...");
+  },3000);
+}
+function clearScheduleSlowTimer(){
+  if(scheduleStatusTimer){clearTimeout(scheduleStatusTimer);scheduleStatusTimer=null;}
+}
+function fetchJson(url){
+  return fetch(url).then(function(r){
+    if(!r.ok)throw new Error("fetch failed");
+    return r.json();
+  });
+}
+async function fetchScheduleRange(masterId,from,to){
+  return Promise.all([
+    fetchJson(`/api/appointments/range?master_id=${masterId}&from_date=${from}&to_date=${to}`),
+    fetchJson(`/api/breaks/range?master_id=${masterId}&from_date=${from}&to_date=${to}`),
   ]);
-  appointments=ap;breaks=br;renderAll();
+}
+function renderScheduleData(ap,br){
+  appointments=ap;
+  breaks=br;
+  renderAll();
+}
+async function loadExpandedMobileSchedule(){
+  const loadStart=addDays(periodStart,-1);
+  const days=Array.from({length:14},(_,i)=>isoDate(addDays(loadStart,i)));
+  const from=days[0],to=days[days.length-1];
+  try{
+    startScheduleSlowTimer();
+    const data=await fetchScheduleRange(masterId,from,to);
+    renderScheduleData(data[0],data[1]);
+    hideScheduleStatus();
+  }catch(e){
+    clearScheduleSlowTimer();
+    showScheduleStatus("Не вдалося завантажити розклад. Спробуйте оновити.",true);
+  }
+}
+async function loadWeek(){
+  showScheduleStatus("Завантаження розкладу...");
+  startScheduleSlowTimer();
+  try{
+    if(!masterId){
+      const me=await fetchJson("/api/me");
+      if(me.master_id) masterId=me.master_id;
+      else { const ms=await fetchJson("/api/masters");if(ms.length)masterId=ms[0].id; }
+    }
+    if(!masterId){hideScheduleStatus();return;}
+    if(!window._masterName){
+      const me=await fetchJson("/api/me");
+      if(me.name){window._masterName=me.name;const b=document.getElementById("masterNameBadge");if(b)b.textContent=me.name;}
+    }
+    (function(){
+      const now=new Date();
+      const days=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
+      const months=["січ","лют","бер","кві","тра","чер","лип","сер","вер","жов","лис","гру"];
+      const btn=document.getElementById("todayBtn");
+      if(btn) btn.innerHTML="&#128197; "+days[now.getDay()]+", "+now.getDate()+" "+months[now.getMonth()];
+    })();
+    if(!services.length){services=await fetchJson("/api/services");updateDatalist();}
+    const isMobile=window.innerWidth<=640;
+    const useFastMobileLoad=isMobile&&!didInitialMobileFastLoad;
+    const loadDays=useFastMobileLoad?3:(isMobile?14:viewDays);
+    const loadStart=isMobile?addDays(periodStart,-1):periodStart;
+    const days=Array.from({length:loadDays},(_,i)=>isoDate(addDays(loadStart,i)));
+    const from=days[0],to=days[days.length-1];
+    const data=await fetchScheduleRange(masterId,from,to);
+    renderScheduleData(data[0],data[1]);
+    clearScheduleSlowTimer();
+    if(useFastMobileLoad){
+      didInitialMobileFastLoad=true;
+      hideScheduleStatus();
+      loadExpandedMobileSchedule();
+    }else{
+      hideScheduleStatus();
+    }
+  }catch(e){
+    clearScheduleSlowTimer();
+    showScheduleStatus("Не вдалося завантажити розклад. Спробуйте оновити.",true);
+  }
 }
 function updateDatalist(){
   const sel=document.getElementById("fService");

@@ -103,10 +103,13 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .m-empty{text-align:center;padding:40px 20px;color:var(--hint);font-style:italic}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1A1916;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:200}
 .toast.show{opacity:1}
+.schedule-status{position:fixed;left:50%;top:112px;transform:translateX(-50%);z-index:220;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:999px;padding:9px 16px;font-size:13px;font-family:var(--font-head);font-weight:700;box-shadow:var(--shadow);pointer-events:none}
+.schedule-status.error{border-color:rgba(248,113,113,.35);background:var(--danger-light);color:var(--danger)}
 .hidden{display:none!important}
 .desktop-only{display:none}
 @media(min-width:769px){.desktop-only{display:flex!important}}
 @media(max-width:768px){.content{display:none!important}.mobile-wrap{display:flex!important}}
+@media(max-width:768px){.schedule-status{top:12px;max-width:calc(100% - 24px);text-align:center;white-space:normal}}
 
 .time-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .time-btn{padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px;font-family:var(--font-head);color:var(--muted);cursor:pointer}
