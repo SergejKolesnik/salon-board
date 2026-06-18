@@ -5,7 +5,7 @@ const MONTHS=["січня","лютого","березня","квітня","тр�
 let appointments=[],breaks=[],masterId=null,services=[];
 let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
-let editingId=null,mobileDay=new Date();
+let editingId=null,editingBreakId=null,mobileDay=new Date();
 let selectedClientId=null;
 let shouldSmartScrollDesktop=true;
 let clientsDirectory=[];
@@ -213,14 +213,15 @@ function renderGrid(days,today){
       const key=iso+"_"+hr;
       const occ=occupied[key];
 
-      const isB=breaks.some(b=>
+      const br=breaks.find(b=>
         b.break_date===iso &&
         toMin(b.start_time)<=toMin(hr) &&
         toMin(b.end_time)>toMin(hr)
       );
 
-      if(isB){
-        h+=`<div class="slot break-slot"></div>`;
+      if(br){
+        const label=hr===br.start_time.slice(0,5)?escapeHtml(br.label||"Зайнято"):"";
+        h+=`<div class="slot break-slot" onclick="event.stopPropagation();openBreakDetail(${br.id})">${label?`<div class="break-label">${label}</div>`:""}</div>`;
       }
       else if(occ && occ.id){
         const rows=Math.ceil(occ.duration_min/30);
@@ -288,10 +289,10 @@ function renderScrollCalendar(){
     const da=appointments.filter(a=>a.appt_date===iso);
     const db=breaks.filter(b=>b.break_date===iso);
     const slots=hours.map(hr=>{
-      const isB=db.some(b=>toMin(b.start_time)<=toMin(hr)&&toMin(b.end_time)>toMin(hr));
+      const br=db.find(b=>toMin(b.start_time)<=toMin(hr)&&toMin(b.end_time)>toMin(hr));
       const ap=da.find(a=>a.start_time===hr);
       let inner="";
-      if(isB) inner=`<div class="cal-break">Перерва</div>`;
+      if(br) inner=`<div class="cal-break" onclick="event.stopPropagation();openBreakDetail(${br.id})">${escapeHtml(br.label||"Зайнято")}</div>`;
       else if(ap){
         const rows=Math.ceil(ap.duration_min/30);
         const px=rows*52-8;
@@ -341,11 +342,47 @@ function goToDate(iso){
   loadWeek();
 }
 function setMobileDay(iso){mobileDay=new Date(iso+"T12:00:00");}
+function rowOf(id){const el=document.getElementById(id);return el?el.closest(".form-row"):null;}
+function ensureEventTypeUi(){
+  if(document.getElementById("fEventType"))return;
+  const clientRow=rowOf("fClient");
+  if(clientRow){
+    const typeRow=document.createElement("div");
+    typeRow.className="form-row";
+    typeRow.id="eventTypeRow";
+    typeRow.innerHTML='<label>Тип події</label><select id="fEventType"><option value="appointment">Запис клієнта</option><option value="break">Зайнятий час</option></select>';
+    clientRow.parentNode.insertBefore(typeRow,clientRow);
+    document.getElementById("fEventType").addEventListener("change",updateEventTypeUi);
+  }
+  const serviceRow=rowOf("fService");
+  if(serviceRow){
+    const reasonRow=document.createElement("div");
+    reasonRow.className="form-row hidden";
+    reasonRow.id="breakReasonRow";
+    reasonRow.innerHTML='<label>Назва / причина</label><input id="fBreakLabel" type="text" placeholder="Зайнято">';
+    serviceRow.parentNode.insertBefore(reasonRow,serviceRow.nextSibling);
+  }
+}
+function updateEventTypeUi(){
+  const type=(document.getElementById("fEventType")||{value:"appointment"}).value;
+  const isBreak=type==="break";
+  ["fClient","fPhone","fService","fStatus"].forEach(id=>{const row=rowOf(id);if(row)row.classList.toggle("hidden",isBreak);});
+  const reason=document.getElementById("breakReasonRow");if(reason)reason.classList.toggle("hidden",!isBreak);
+  hideClientSuggestions();
+}
+function breakEndTime(start,duration){
+  const mins=toMin(start)+parseInt(duration||60);
+  return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");
+}
 function openAddModal(date,time){
   editingId=null;
+  editingBreakId=null;
   selectedClientId=null;hideClientSuggestions();
+  ensureEventTypeUi();
   document.getElementById("modalTitle").textContent="Новий запис";
   document.getElementById("deleteBtn").classList.add("hidden");
+  var et=document.getElementById("fEventType");if(et)et.value="appointment";
+  var bl=document.getElementById("fBreakLabel");if(bl)bl.value="";
   document.getElementById("fClient").value="";
   var ph=document.getElementById("fPhone");if(ph)ph.value="";
   document.getElementById("fService").value="";
@@ -354,6 +391,7 @@ function openAddModal(date,time){
   document.getElementById("fDuration").value="60";
   document.getElementById("fNotes").value="";
   var fs=document.getElementById("fStatus");if(fs)fs.value="scheduled";
+  updateEventTypeUi();
   buildTimeGrid();updateTimeBtns();
   setDur(60);
   document.getElementById("modalOverlay").classList.remove("hidden");
@@ -362,7 +400,9 @@ function openAddModal(date,time){
 function openAddOnSlot(date,time){openAddModal(date,time);}
 function closeModal(){document.getElementById("modalOverlay").classList.add("hidden");}
 async function openDetail(id){
+editingBreakId=null;
 const a=appointments.find(x=>x.id==id);if(!a)return;
+const editBtn=document.getElementById("detailEditBtn");if(editBtn){editBtn.textContent="Редагувати";editBtn.classList.remove("btn-danger");editBtn.classList.add("btn-primary");}
 document.getElementById("detailName").textContent=a.client_name;
 document.getElementById("detailBody").innerHTML=
 '<div class="detail-row"><span class="dl">\u0421\u0442\u0430\u0442\u0443\u0441</span><span class="dv">'+statusBadgeHtml(a.status)+'</span></div>'
@@ -372,8 +412,11 @@ document.getElementById("detailBody").innerHTML=
 +(a.notes?'<div class="detail-row"><span class="dl">\u041d\u043e\u0442\u0430\u0442\u043a\u0438</span><span class="dv">'+a.notes+'</span></div>':'');
 document.getElementById("detailEditBtn").onclick=function(){
 editingId=a.id;
+editingBreakId=null;
+ensureEventTypeUi();
 document.getElementById("modalTitle").textContent="\u0420\u0435\u0434\u0430\u0433\u0443\u0432\u0430\u0442\u0438";
 document.getElementById("deleteBtn").classList.remove("hidden");
+var et=document.getElementById("fEventType");if(et)et.value="appointment";
 document.getElementById("fClient").value=a.client_name;
 document.getElementById("fService").value=a.service;
 document.getElementById("fDate").value=a.appt_date;
@@ -381,6 +424,7 @@ document.getElementById("fTime").value=a.start_time;
 document.getElementById("fDuration").value=a.duration_min;
 document.getElementById("fNotes").value=a.notes||"";
 var fs=document.getElementById("fStatus");if(fs)fs.value=statusValue(a.status);
+updateEventTypeUi();
 closeDetail();
 document.getElementById("modalOverlay").classList.remove("hidden");
 };
@@ -425,10 +469,44 @@ document.getElementById("detailOverlay").classList.remove("hidden");
 }
 }
 
+function openBreakDetail(id){
+const b=breaks.find(x=>x.id==id);if(!b)return;
+editingBreakId=b.id;
+editingId=null;
+const duration=toMin(b.end_time)-toMin(b.start_time);
+document.getElementById("detailName").textContent=b.label||"Зайнято";
+document.getElementById("detailBody").innerHTML=
+'<div class="detail-row"><span class="dl">Тип</span><span class="dv">Зайнятий час</span></div>'
++'<div class="detail-row"><span class="dl">Дата</span><span class="dv">'+fmtDate(b.break_date)+'</span></div>'
++'<div class="detail-row"><span class="dl">Час</span><span class="dv">'+b.start_time+', '+duration+' хв</span></div>';
+const clientBlock=document.getElementById("detailClientBlock");if(clientBlock){clientBlock.innerHTML="";clientBlock.style.display="none";}
+const editBtn=document.getElementById("detailEditBtn");
+if(editBtn){
+  editBtn.textContent="Видалити";
+  editBtn.classList.remove("btn-primary");
+  editBtn.classList.add("btn-danger");
+  editBtn.onclick=function(){deleteBreak(b.id);};
+}
+document.getElementById("detailOverlay").classList.remove("hidden");
+}
+
 function closeDetail(){document.getElementById("detailOverlay").classList.add("hidden");}
 document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
 document.getElementById("detailOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail();});
 async function saveAppt(){
+  const eventType=(document.getElementById("fEventType")||{value:"appointment"}).value;
+  if(eventType==="break"){
+    const start=document.getElementById("fTime").value.slice(0,5);
+    const body={master_id:masterId,break_date:document.getElementById("fDate").value,start_time:start,end_time:breakEndTime(start,document.getElementById("fDuration").value),label:(document.getElementById("fBreakLabel")||{value:""}).value.trim()||"Зайнято"};
+    const url=editingBreakId?`/api/breaks/${editingBreakId}`:"/api/breaks";
+    const res=await fetch(url,{method:editingBreakId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+    closeModal();showToast(editingBreakId?"Оновлено":"Збережено");
+    mobileDay=new Date(body.break_date+"T12:00:00");
+    shouldSmartScrollDesktop=false;
+    await loadWeek();
+    return;
+  }
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
   if(!body.client_name||!body.service){alert("Заповніть ім\u0027я і послугу");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
@@ -444,6 +522,15 @@ async function deleteAppt(){
   await fetch(`/api/appointments/${editingId}`,{method:"DELETE"});
   shouldSmartScrollDesktop=false;
   closeModal();showToast("Видалено");await loadWeek();
+}
+async function deleteBreak(id){
+  const breakId=id||editingBreakId;
+  if(!breakId||!confirm("Видалити блокування?"))return;
+  const res=await fetch(`/api/breaks/${breakId}`,{method:"DELETE"});
+  if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+  editingBreakId=null;
+  shouldSmartScrollDesktop=false;
+  closeDetail();closeModal();showToast("Видалено");await loadWeek();
 }
 function showToast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2500);}
 // Force mobile layout check

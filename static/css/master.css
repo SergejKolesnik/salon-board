@@ -27,8 +27,9 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .slot{border-right:1px solid var(--border);border-bottom:1px solid var(--border);height:55px;padding:3px;cursor:pointer;transition:background .1s}
 .slot:last-child{border-right:none}
 .slot:hover{background:var(--accent-light)}
-.slot.break-slot{background:repeating-linear-gradient(45deg,#2A2A30,#2A2A30 5px,#222227 5px,#222227 10px);cursor:default}
+.slot.break-slot{background:repeating-linear-gradient(45deg,#2A2A30,#2A2A30 5px,#222227 5px,#222227 10px);cursor:pointer}
 .slot.break-slot:hover{background:repeating-linear-gradient(45deg,#2A2A30,#2A2A30 5px,#222227 5px,#222227 10px)}
+.break-label{height:100%;display:flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#F59E0B;font-size:11px;font-weight:700;font-family:var(--font-head)}
 .appt{border-radius:6px;padding:4px 8px 4px 11px;height:100%;display:flex;flex-direction:column;justify-content:center;cursor:pointer;border-left:3px solid var(--accent);background:var(--accent-light);box-shadow:var(--shadow)}
 .appt:hover{filter:brightness(1.1)}
 .appt .an{font-size:12px;font-weight:700;font-family:var(--font-head);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -161,6 +161,13 @@ class AppointmentUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
 
+class BreakIn(BaseModel):
+    master_id: int
+    break_date: str
+    start_time: str
+    end_time: str
+    label: str = "Зайнято"
+
 class MasterIn(BaseModel):
     name: str
     color: str = "#7F77DD"
@@ -409,28 +416,72 @@ def list_appointments(date: str = None, token: str = Cookie(default=None)):
         rows = []
     return [appointment_response(r) for r in rows]
 
+def time_to_min(t: str) -> int:
+    parts = t.split(":")
+    return int(parts[0]) * 60 + int(parts[1])
+
+def overlaps(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
+    return start_a < end_b and end_a > start_b
+
+def ensure_can_write_master(master_id: int, sess: dict):
+    if sess['role'] == 'master' and sess['master_id']:
+        perms = get_master_perms(sess['master_id'])
+        if not perms['can_add_any'] and master_id != sess['master_id']:
+            raise HTTPException(403, "Можна додавати записи лише собі")
+    elif sess['role'] not in ('admin', 'master'):
+        raise HTTPException(403, "Недостатньо прав")
+
+def ensure_can_edit_master(master_id: int, sess: dict):
+    if sess['role'] == 'master' and sess['master_id']:
+        perms = get_master_perms(sess['master_id'])
+        if not perms['can_edit_others'] and master_id != sess['master_id']:
+            raise HTTPException(403, "Можна редагувати лише свої записи")
+    elif sess['role'] not in ('admin', 'master'):
+        raise HTTPException(403, "Недостатньо прав")
+
+def check_appointment_conflicts(master_id: int, appt_date: str, start_time: str, duration_min: int, exclude_appt_id: int = None):
+    new_start = time_to_min(start_time)
+    new_end = new_start + int(duration_min)
+    if exclude_appt_id is None:
+        existing = turso("SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?", [master_id, appt_date])
+    else:
+        existing = turso("SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=? AND id<>?", [master_id, appt_date, exclude_appt_id])
+    for row in existing:
+        s = time_to_min(row["start_time"])
+        e = s + int(row["duration_min"])
+        if overlaps(new_start, new_end, s, e):
+            raise HTTPException(400, "Цей час вже зайнятий у майстра")
+    existing_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=?", [master_id, appt_date])
+    for row in existing_breaks:
+        if overlaps(new_start, new_end, time_to_min(row["start_time"]), time_to_min(row["end_time"])):
+            raise HTTPException(400, "Цей час заблокований")
+
+def check_break_conflicts(master_id: int, break_date: str, start_time: str, end_time: str, exclude_break_id: int = None):
+    new_start = time_to_min(start_time)
+    new_end = time_to_min(end_time)
+    if new_end <= new_start:
+        raise HTTPException(400, "Некоректний час закінчення")
+    appointments = turso("SELECT start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?", [master_id, break_date])
+    for row in appointments:
+        s = time_to_min(row["start_time"])
+        e = s + int(row["duration_min"])
+        if overlaps(new_start, new_end, s, e):
+            raise HTTPException(400, "Цей час вже зайнятий записом")
+    if exclude_break_id is None:
+        other_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=?", [master_id, break_date])
+    else:
+        other_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=? AND id<>?", [master_id, break_date, exclude_break_id])
+    for row in other_breaks:
+        if overlaps(new_start, new_end, time_to_min(row["start_time"]), time_to_min(row["end_time"])):
+            raise HTTPException(400, "Цей час вже заблокований")
+
 @app.post("/api/appointments", status_code=201)
 def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
     sess = get_session(token)
     if not sess:
         raise HTTPException(401, "Не авторизовано")
-    # Перевірка прав на додавання
-    if sess['role'] == 'master' and sess['master_id']:
-        perms = get_master_perms(sess['master_id'])
-        if not perms['can_add_any'] and a.master_id != sess['master_id']:
-            raise HTTPException(403, "Можна додавати записи лише собі")
-    elif sess['role'] not in ('admin', 'master'):
-        raise HTTPException(403, "Недостатньо прав")
-
-    def to_min(t): parts=t.split(":"); return int(parts[0])*60+int(parts[1])
-    existing = turso("SELECT start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?", [a.master_id, a.appt_date])
-    new_start = to_min(a.start_time)
-    new_end = new_start + a.duration_min
-    for row in existing:
-        s = to_min(row["start_time"])
-        e = s + int(row["duration_min"])
-        if new_start < e and new_end > s:
-            raise HTTPException(400, "Цей час вже зайнятий у майстра")
+    ensure_can_write_master(a.master_id, sess)
+    check_appointment_conflicts(a.master_id, a.appt_date, a.start_time, a.duration_min)
     # ─── CRM: знайти або створити клієнта ────────────────────────────────
     client_id = None
     # Якщо client_id переданий явно з фронтенду — перевірити чи існує
@@ -493,6 +544,7 @@ def update_appointment(appt_id: int, a: AppointmentUpdate, token: str = Cookie(d
     for k, v in a.dict(exclude_none=True).items():
         data[k] = v
     data["status"] = data.get("status") or "scheduled"
+    check_appointment_conflicts(int(data["master_id"]), data["appt_date"], data["start_time"], int(data["duration_min"]), appt_id)
     turso_exec("UPDATE appointments SET client_name=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=?,status=? WHERE id=?",
               [data["client_name"], data["service"], data["appt_date"], data["start_time"], data["duration_min"], data["notes"], data["status"], appt_id])
     rows2 = turso("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.id=?", [appt_id])
@@ -522,6 +574,53 @@ def list_breaks(date: str = None):
     else:
         rows = turso("SELECT * FROM breaks")
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
+
+@app.post("/api/breaks", status_code=201)
+def create_break(b: BreakIn, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    ensure_can_write_master(b.master_id, sess)
+    check_break_conflicts(b.master_id, b.break_date, b.start_time, b.end_time)
+    label = (b.label or "Зайнято").strip() or "Зайнято"
+    turso_exec("INSERT INTO breaks (master_id,break_date,start_time,end_time,label) VALUES (?,?,?,?,?)",
+               [b.master_id, b.break_date, b.start_time, b.end_time, label])
+    rows = turso("SELECT * FROM breaks WHERE master_id=? AND break_date=? AND start_time=? ORDER BY id DESC LIMIT 1",
+                 [b.master_id, b.break_date, b.start_time])
+    if not rows:
+        return {"ok": True, "master_id": b.master_id, "break_date": b.break_date, "start_time": b.start_time, "end_time": b.end_time, "label": label}
+    r = rows[0]
+    return {**r, 'id': int(r['id']), 'master_id': int(r['master_id'])}
+
+@app.put("/api/breaks/{break_id}")
+def update_break(break_id: int, b: BreakIn, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    rows = turso("SELECT * FROM breaks WHERE id=?", [break_id])
+    if not rows:
+        raise HTTPException(404, "Блокування не знайдено")
+    ensure_can_edit_master(int(rows[0]["master_id"]), sess)
+    ensure_can_edit_master(b.master_id, sess)
+    check_break_conflicts(b.master_id, b.break_date, b.start_time, b.end_time, break_id)
+    label = (b.label or "Зайнято").strip() or "Зайнято"
+    turso_exec("UPDATE breaks SET master_id=?,break_date=?,start_time=?,end_time=?,label=? WHERE id=?",
+               [b.master_id, b.break_date, b.start_time, b.end_time, label, break_id])
+    rows2 = turso("SELECT * FROM breaks WHERE id=?", [break_id])
+    r = rows2[0]
+    return {**r, 'id': int(r['id']), 'master_id': int(r['master_id'])}
+
+@app.delete("/api/breaks/{break_id}")
+def delete_break(break_id: int, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+    rows = turso("SELECT * FROM breaks WHERE id=?", [break_id])
+    if not rows:
+        raise HTTPException(404, "Блокування не знайдено")
+    ensure_can_edit_master(int(rows[0]["master_id"]), sess)
+    turso_exec("DELETE FROM breaks WHERE id=?", [break_id])
+    return {"ok": True}
 
 @app.get("/api/appointments/range")
 def appointments_range(master_id: int, from_date: str = None, to_date: str = None, token: str = Cookie(default=None)):
