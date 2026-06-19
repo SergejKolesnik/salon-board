@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
@@ -6,17 +8,20 @@ import '../../features/calendar/calendar_models.dart';
 
 class LocalDatabase {
   Database? _database;
+  String? _databasePath;
 
   Future<Database> get database async {
     final existing = _database;
     if (existing != null) return existing;
 
     final dbPath = await getDatabasesPath();
+    final fullPath = path.join(dbPath, 'salon_board_mobile.db');
     final db = await openDatabase(
-      path.join(dbPath, 'salon_board_mobile.db'),
+      fullPath,
       version: 1,
       onCreate: _createSchema,
     );
+    _databasePath = fullPath;
     _database = db;
     return db;
   }
@@ -80,6 +85,29 @@ class LocalDatabase {
     final value = rows.first['value'] as String?;
     if (value == null || value.isEmpty) return null;
     return DateTime.tryParse(value);
+  }
+
+  Future<int> databaseSizeBytes() async {
+    await database;
+    final dbPath = _databasePath;
+    if (dbPath == null) return 0;
+    final file = File(dbPath);
+    if (!await file.exists()) return 0;
+    return file.length();
+  }
+
+  Future<int> countAppointments() => _countRows('appointments_cache');
+
+  Future<int> countClients() => _countRows('clients_cache');
+
+  Future<int> countBreaks() => _countRows('breaks_cache');
+
+  Future<int> _countRows(String table) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(1) as count FROM $table WHERE deleted_at IS NULL',
+    );
+    return (rows.first['count'] as int?) ?? 0;
   }
 
   Future<void> _createSchema(Database db, int version) async {

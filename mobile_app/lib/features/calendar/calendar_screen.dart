@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/sync/sync_service.dart';
 import '../../core/sync/sync_status.dart';
+import '../diagnostics/sync_diagnostics_screen.dart';
 import 'calendar_models.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -42,6 +43,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
           '${_formatDate(_weekStart)} - ${_formatDate(weekEnd)}',
         ),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SyncDiagnosticsScreen(
+                    syncService: widget.syncService,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.monitor_heart_outlined),
+          ),
           IconButton(
             onPressed: () {
               setState(

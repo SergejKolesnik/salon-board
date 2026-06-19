@@ -28,7 +28,7 @@ class _SalonBoardMobileAppState extends State<SalonBoardMobileApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Salon Board Mobile',
+      title: 'Body Balance CRM',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
