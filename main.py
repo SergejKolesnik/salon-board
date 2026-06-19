@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Dict, Optional
 
 # ─── TURSO DB ──────────────────────────────────────────────────────────────────
 
@@ -255,6 +255,18 @@ class ClientUpdate(BaseModel):
     birthday: str = ""
     notes: str = ""
 
+class SyncBootstrapResponse(BaseModel):
+    server_time: str
+    masters: list[Dict[str, Any]]
+    services: list[Dict[str, Any]]
+    clients: list[Dict[str, Any]]
+    appointments: list[Dict[str, Any]]
+    breaks: list[Dict[str, Any]]
+
+class SyncPullResponse(BaseModel):
+    server_time: str
+    changes: Dict[str, list[Dict[str, Any]]]
+
 # ─── APP ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Cosmo Schedule")
@@ -326,6 +338,72 @@ def appointment_response(r: dict) -> dict:
         'duration_min': int(r['duration_min']),
         'status': r.get('status') or 'scheduled',
     }
+
+def server_time_value() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+def normalize_sync_since(value: str) -> str:
+    try:
+        raw = (value or "").strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+    except Exception:
+        raise HTTPException(400, "Invalid since timestamp")
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
+
+def sync_visible_master_id(sess: dict):
+    if sess["role"] != "master" or not sess.get("master_id"):
+        return None
+    perms = get_master_perms(sess["master_id"])
+    if perms["can_view_all"]:
+        return None
+    return sess["master_id"]
+
+def sync_row(r: dict, int_fields=None) -> dict:
+    data = {**r}
+    for field in ["id", "version"] + (int_fields or []):
+        if field in data and data[field] not in (None, ""):
+            data[field] = int(data[field])
+    return data
+
+def sync_masters(where_sql="", params=None):
+    rows = turso(f"SELECT * FROM masters {where_sql} ORDER BY id", params or [])
+    return [sync_row(r) for r in rows]
+
+def sync_services(where_sql="", params=None):
+    rows = turso(f"SELECT * FROM services {where_sql} ORDER BY sort_order, id", params or [])
+    return [sync_row(r, ["sort_order"]) for r in rows]
+
+def sync_clients(where_sql="", params=None):
+    rows = turso(f"SELECT * FROM clients {where_sql} ORDER BY updated_at DESC, id DESC", params or [])
+    return [sync_row(r) for r in rows]
+
+def sync_appointments(where_sql="", params=None, master_id=None):
+    filters = []
+    values = []
+    if where_sql:
+        filters.append(where_sql)
+        values.extend(params or [])
+    if master_id is not None:
+        filters.append("master_id=?")
+        values.append(master_id)
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    rows = turso(f"SELECT * FROM appointments {where} ORDER BY appt_date, start_time, id", values)
+    return [sync_row(r, ["master_id", "duration_min", "client_id"]) for r in rows]
+
+def sync_breaks(where_sql="", params=None, master_id=None):
+    filters = []
+    values = []
+    if where_sql:
+        filters.append(where_sql)
+        values.extend(params or [])
+    if master_id is not None:
+        filters.append("master_id=?")
+        values.append(master_id)
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    rows = turso(f"SELECT * FROM breaks {where} ORDER BY break_date, start_time, id", values)
+    return [sync_row(r, ["master_id"]) for r in rows]
 
 # ─── REST API ──────────────────────────────────────────────────────────────────
 
@@ -800,6 +878,37 @@ def get_client_history(client_id: int, token: str = Cookie(default=None)):
         'duration_min': int(r['duration_min']),
     } for r in rows]
 
+@app.get("/api/sync/bootstrap", response_model=SyncBootstrapResponse)
+def sync_bootstrap(sess=Depends(require_auth)):
+    cutoff = (date.today() - timedelta(days=90)).isoformat()
+    master_id = sync_visible_master_id(sess)
+    return {
+        "server_time": server_time_value(),
+        "masters": sync_masters(),
+        "services": sync_services(),
+        "clients": sync_clients(),
+        "appointments": sync_appointments("appt_date>=?", [cutoff], master_id),
+        "breaks": sync_breaks("break_date>=?", [cutoff], master_id),
+    }
+
+@app.get("/api/sync/pull", response_model=SyncPullResponse)
+def sync_pull(since: str, sess=Depends(require_auth)):
+    since_db = normalize_sync_since(since)
+    master_id = sync_visible_master_id(sess)
+    changed = "(updated_at > ? OR deleted_at > ?)"
+    params = [since_db, since_db]
+    where_changed = f"WHERE {changed}"
+    return {
+        "server_time": server_time_value(),
+        "changes": {
+            "clients": sync_clients(where_changed, params),
+            "appointments": sync_appointments(changed, params, master_id),
+            "breaks": sync_breaks(changed, params, master_id),
+            "services": sync_services(where_changed, params),
+            "masters": sync_masters(where_changed, params),
+        },
+    }
+
 @app.get("/api/services")
 def list_services():
     rows = turso("SELECT * FROM services ORDER BY sort_order, id")
@@ -808,7 +917,7 @@ def list_services():
 @app.get("/api/server-time")
 def server_time():
     return {
-        "server_time": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "server_time": server_time_value(),
         "timezone": "Europe/Kyiv",
     }
 
