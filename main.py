@@ -4,6 +4,7 @@ Cosmo — розклад косметологічного кабінету
 """
 
 import json, hashlib, secrets, os, urllib.request, urllib.error
+import uuid as uuid_lib
 from datetime import date, datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -121,6 +122,62 @@ def init_db():
         turso_exec("ALTER TABLE appointments ADD COLUMN status TEXT DEFAULT 'scheduled'", [])
     except Exception:
         pass
+
+    sync_columns = {
+        "appointments": [
+            "uuid TEXT",
+            "updated_at TEXT",
+            "deleted_at TEXT",
+            "version INTEGER DEFAULT 1",
+            "created_by_device_id TEXT",
+            "last_mutation_id TEXT",
+        ],
+        "breaks": [
+            "uuid TEXT",
+            "updated_at TEXT",
+            "deleted_at TEXT",
+            "version INTEGER DEFAULT 1",
+            "created_by_device_id TEXT",
+            "last_mutation_id TEXT",
+        ],
+        "clients": [
+            "uuid TEXT",
+            "deleted_at TEXT",
+            "version INTEGER DEFAULT 1",
+            "created_by_device_id TEXT",
+            "last_mutation_id TEXT",
+        ],
+        "services": [
+            "uuid TEXT",
+            "updated_at TEXT",
+            "deleted_at TEXT",
+            "version INTEGER DEFAULT 1",
+        ],
+        "masters": [
+            "uuid TEXT",
+            "updated_at TEXT",
+            "deleted_at TEXT",
+            "version INTEGER DEFAULT 1",
+        ],
+    }
+    for table, columns in sync_columns.items():
+        for column_sql in columns:
+            try:
+                turso_exec(f"ALTER TABLE {table} ADD COLUMN {column_sql}", [])
+            except Exception:
+                pass
+
+    for table in sync_columns:
+        try:
+            rows = turso(f"SELECT id FROM {table} WHERE uuid IS NULL OR uuid = ''")
+            for row in rows:
+                turso_exec(f"UPDATE {table} SET uuid=? WHERE id=?", [str(uuid_lib.uuid4()), int(row["id"])])
+        except Exception:
+            pass
+        try:
+            turso_exec(f"UPDATE {table} SET updated_at=datetime('now') WHERE updated_at IS NULL", [])
+        except Exception:
+            pass
     # Default services
     svc_rows = turso("SELECT COUNT(*) as cnt FROM services")
     if int(svc_rows[0]["cnt"]) == 0:
@@ -747,6 +804,13 @@ def get_client_history(client_id: int, token: str = Cookie(default=None)):
 def list_services():
     rows = turso("SELECT * FROM services ORDER BY sort_order, id")
     return [{**r, 'id': int(r['id']), 'sort_order': int(r['sort_order'] or 0)} for r in rows]
+
+@app.get("/api/server-time")
+def server_time():
+    return {
+        "server_time": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "timezone": "Europe/Kyiv",
+    }
 
 class ServiceIn(BaseModel):
     name: str
