@@ -267,6 +267,18 @@ class SyncPullResponse(BaseModel):
     server_time: str
     changes: Dict[str, list[Dict[str, Any]]]
 
+class SyncPushItem(BaseModel):
+    local_id: Optional[str] = None
+    id: Optional[int] = None
+    server_id: Optional[int] = None
+    original_server_id: Optional[int] = None
+    action: str
+    data: Dict[str, Any] = {}
+
+class SyncPushIn(BaseModel):
+    appointments: list[SyncPushItem] = []
+    breaks: list[SyncPushItem] = []
+
 # ─── APP ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Cosmo Schedule")
@@ -578,15 +590,15 @@ def check_appointment_conflicts(master_id: int, appt_date: str, start_time: str,
     new_start = time_to_min(start_time)
     new_end = new_start + int(duration_min)
     if exclude_appt_id is None:
-        existing = turso("SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?", [master_id, appt_date])
+        existing = turso("SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=? AND deleted_at IS NULL", [master_id, appt_date])
     else:
-        existing = turso("SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=? AND id<>?", [master_id, appt_date, exclude_appt_id])
+        existing = turso("SELECT id, start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=? AND id<>? AND deleted_at IS NULL", [master_id, appt_date, exclude_appt_id])
     for row in existing:
         s = time_to_min(row["start_time"])
         e = s + int(row["duration_min"])
         if overlaps(new_start, new_end, s, e):
             raise HTTPException(400, "Цей час вже зайнятий у майстра")
-    existing_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=?", [master_id, appt_date])
+    existing_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=? AND deleted_at IS NULL", [master_id, appt_date])
     for row in existing_breaks:
         if overlaps(new_start, new_end, time_to_min(row["start_time"]), time_to_min(row["end_time"])):
             raise HTTPException(400, "Цей час заблокований")
@@ -596,16 +608,16 @@ def check_break_conflicts(master_id: int, break_date: str, start_time: str, end_
     new_end = time_to_min(end_time)
     if new_end <= new_start:
         raise HTTPException(400, "Некоректний час закінчення")
-    appointments = turso("SELECT start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=?", [master_id, break_date])
+    appointments = turso("SELECT start_time, duration_min FROM appointments WHERE master_id=? AND appt_date=? AND deleted_at IS NULL", [master_id, break_date])
     for row in appointments:
         s = time_to_min(row["start_time"])
         e = s + int(row["duration_min"])
         if overlaps(new_start, new_end, s, e):
             raise HTTPException(400, "Цей час вже зайнятий записом")
     if exclude_break_id is None:
-        other_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=?", [master_id, break_date])
+        other_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=? AND deleted_at IS NULL", [master_id, break_date])
     else:
-        other_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=? AND id<>?", [master_id, break_date, exclude_break_id])
+        other_breaks = turso("SELECT start_time, end_time FROM breaks WHERE master_id=? AND break_date=? AND id<>? AND deleted_at IS NULL", [master_id, break_date, exclude_break_id])
     for row in other_breaks:
         if overlaps(new_start, new_end, time_to_min(row["start_time"]), time_to_min(row["end_time"])):
             raise HTTPException(400, "Цей час вже заблокований")
@@ -705,9 +717,9 @@ def delete_appointment(appt_id: int, token: str = Cookie(default=None)):
 @app.get("/api/breaks")
 def list_breaks(date: str = None):
     if date:
-        rows = turso("SELECT * FROM breaks WHERE break_date=?", [date])
+        rows = turso("SELECT * FROM breaks WHERE break_date=? AND deleted_at IS NULL", [date])
     else:
-        rows = turso("SELECT * FROM breaks")
+        rows = turso("SELECT * FROM breaks WHERE deleted_at IS NULL")
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
 
 @app.post("/api/breaks", status_code=201)
@@ -768,17 +780,17 @@ def appointments_range(master_id: int, from_date: str = None, to_date: str = Non
         if not perms['can_view_all'] and master_id != sess['master_id']:
             raise HTTPException(403, "Доступ заборонено")
     if from_date and to_date:
-        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date>=? AND a.appt_date<=? ORDER BY a.appt_date, a.start_time", [master_id, from_date, to_date])
+        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date>=? AND a.appt_date<=? AND a.deleted_at IS NULL ORDER BY a.appt_date, a.start_time", [master_id, from_date, to_date])
     else:
-        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? ORDER BY a.appt_date, a.start_time", [master_id])
+        rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.deleted_at IS NULL ORDER BY a.appt_date, a.start_time", [master_id])
     return [appointment_response(r) for r in rows]
 
 @app.get("/api/breaks/range")
 def breaks_range(master_id: int, from_date: str = None, to_date: str = None):
     if from_date and to_date:
-        rows = turso("SELECT * FROM breaks WHERE master_id=? AND break_date>=? AND break_date<=?", [master_id, from_date, to_date])
+        rows = turso("SELECT * FROM breaks WHERE master_id=? AND break_date>=? AND break_date<=? AND deleted_at IS NULL", [master_id, from_date, to_date])
     else:
-        rows = turso("SELECT * FROM breaks WHERE master_id=?", [master_id])
+        rows = turso("SELECT * FROM breaks WHERE master_id=? AND deleted_at IS NULL", [master_id])
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
 
 # ─── CRM: CLIENTS ──────────────────────────────────────────────────────────────
@@ -907,6 +919,229 @@ def sync_pull(since: str, sess=Depends(require_auth)):
             "services": sync_services(where_changed, params),
             "masters": sync_masters(where_changed, params),
         },
+    }
+
+def push_item_server_id(item: SyncPushItem):
+    for value in (item.original_server_id, item.server_id, item.id):
+        if value is not None and int(value) > 0:
+            return int(value)
+    return None
+
+def push_local_key(item: SyncPushItem, fallback: str):
+    if item.local_id:
+        return item.local_id
+    if item.server_id is not None:
+        return str(item.server_id)
+    if item.id is not None:
+        return str(item.id)
+    return fallback
+
+def ensure_push_client(data: Dict[str, Any]):
+    client_id = data.get("client_id")
+    if client_id:
+        rows = turso("SELECT id FROM clients WHERE id=?", [int(client_id)])
+        if rows:
+            return int(rows[0]["id"])
+    phone = (data.get("phone") or "").strip()
+    client_name = (data.get("client_name") or "").strip()
+    if phone:
+        rows = turso("SELECT id FROM clients WHERE phone=?", [phone])
+        if rows:
+            return int(rows[0]["id"])
+    if not client_name and not phone:
+        return None
+    name_parts = client_name.split(None, 1)
+    first_name = name_parts[0] if name_parts else client_name
+    last_name = name_parts[1] if len(name_parts) > 1 else ""
+    cid = turso_exec(
+        "INSERT INTO clients (first_name,last_name,phone,uuid,updated_at,version) VALUES (?,?,?,?,datetime('now'),1)",
+        [first_name or "Клієнт", last_name, phone, str(uuid_lib.uuid4())],
+    )
+    return int(cid) if cid is not None else None
+
+def push_create_appointment(item: SyncPushItem, sess: dict):
+    data = item.data or {}
+    master_id = int(data.get("master_id") or sess.get("master_id") or 0)
+    if not master_id:
+        raise HTTPException(400, "master_id is required")
+    ensure_can_write_master(master_id, sess)
+    duration_min = int(data.get("duration_min") or 60)
+    check_appointment_conflicts(master_id, data.get("appt_date"), data.get("start_time"), duration_min)
+    client_id = ensure_push_client(data)
+    rid = turso_exec(
+        """INSERT INTO appointments
+           (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id,status,uuid,updated_at,deleted_at,version,last_mutation_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),NULL,1,?)""",
+        [
+            master_id,
+            data.get("client_name") or "",
+            data.get("phone") or "",
+            data.get("service") or "",
+            data.get("appt_date"),
+            data.get("start_time"),
+            duration_min,
+            data.get("notes") or "",
+            client_id,
+            data.get("status") or "scheduled",
+            data.get("uuid") or str(uuid_lib.uuid4()),
+            item.local_id or "",
+        ],
+    )
+    return int(rid)
+
+def push_update_appointment(item: SyncPushItem, sess: dict):
+    server_id = push_item_server_id(item)
+    if not server_id:
+        raise HTTPException(400, "server_id is required for appointment update")
+    rows = turso("SELECT * FROM appointments WHERE id=?", [server_id])
+    if not rows:
+        raise HTTPException(404, "Appointment not found")
+    existing = rows[0]
+    ensure_can_edit_master(int(existing["master_id"]), sess)
+    data = {**existing, **(item.data or {})}
+    master_id = int(data.get("master_id") or existing["master_id"])
+    ensure_can_edit_master(master_id, sess)
+    duration_min = int(data.get("duration_min") or existing.get("duration_min") or 60)
+    check_appointment_conflicts(master_id, data.get("appt_date"), data.get("start_time"), duration_min, server_id)
+    client_id = ensure_push_client(data)
+    turso_exec(
+        """UPDATE appointments
+           SET master_id=?,client_name=?,phone=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=?,client_id=?,status=?,
+               updated_at=datetime('now'),deleted_at=NULL,version=COALESCE(version,1)+1,last_mutation_id=?
+           WHERE id=?""",
+        [
+            master_id,
+            data.get("client_name") or "",
+            data.get("phone") or "",
+            data.get("service") or "",
+            data.get("appt_date"),
+            data.get("start_time"),
+            duration_min,
+            data.get("notes") or "",
+            client_id,
+            data.get("status") or "scheduled",
+            item.local_id or "",
+            server_id,
+        ],
+    )
+    return server_id
+
+def push_delete_appointment(item: SyncPushItem, sess: dict):
+    server_id = push_item_server_id(item)
+    if not server_id:
+        return None
+    rows = turso("SELECT * FROM appointments WHERE id=?", [server_id])
+    if not rows:
+        return server_id
+    ensure_can_edit_master(int(rows[0]["master_id"]), sess)
+    turso_exec(
+        "UPDATE appointments SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id=? WHERE id=?",
+        [item.local_id or "", server_id],
+    )
+    return server_id
+
+def push_create_break(item: SyncPushItem, sess: dict):
+    data = item.data or {}
+    master_id = int(data.get("master_id") or sess.get("master_id") or 0)
+    if not master_id:
+        raise HTTPException(400, "master_id is required")
+    ensure_can_write_master(master_id, sess)
+    check_break_conflicts(master_id, data.get("break_date"), data.get("start_time"), data.get("end_time"))
+    rid = turso_exec(
+        """INSERT INTO breaks (master_id,break_date,start_time,end_time,label,uuid,updated_at,deleted_at,version,last_mutation_id)
+           VALUES (?,?,?,?,?,?,datetime('now'),NULL,1,?)""",
+        [
+            master_id,
+            data.get("break_date"),
+            data.get("start_time"),
+            data.get("end_time"),
+            data.get("label") or "Зайнято",
+            data.get("uuid") or str(uuid_lib.uuid4()),
+            item.local_id or "",
+        ],
+    )
+    return int(rid)
+
+def push_update_break(item: SyncPushItem, sess: dict):
+    server_id = push_item_server_id(item)
+    if not server_id:
+        raise HTTPException(400, "server_id is required for break update")
+    rows = turso("SELECT * FROM breaks WHERE id=?", [server_id])
+    if not rows:
+        raise HTTPException(404, "Break not found")
+    existing = rows[0]
+    ensure_can_edit_master(int(existing["master_id"]), sess)
+    data = {**existing, **(item.data or {})}
+    master_id = int(data.get("master_id") or existing["master_id"])
+    ensure_can_edit_master(master_id, sess)
+    check_break_conflicts(master_id, data.get("break_date"), data.get("start_time"), data.get("end_time"), server_id)
+    turso_exec(
+        """UPDATE breaks
+           SET master_id=?,break_date=?,start_time=?,end_time=?,label=?,updated_at=datetime('now'),deleted_at=NULL,
+               version=COALESCE(version,1)+1,last_mutation_id=?
+           WHERE id=?""",
+        [
+            master_id,
+            data.get("break_date"),
+            data.get("start_time"),
+            data.get("end_time"),
+            data.get("label") or "Зайнято",
+            item.local_id or "",
+            server_id,
+        ],
+    )
+    return server_id
+
+def push_delete_break(item: SyncPushItem, sess: dict):
+    server_id = push_item_server_id(item)
+    if not server_id:
+        return None
+    rows = turso("SELECT * FROM breaks WHERE id=?", [server_id])
+    if not rows:
+        return server_id
+    ensure_can_edit_master(int(rows[0]["master_id"]), sess)
+    turso_exec(
+        "UPDATE breaks SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id=? WHERE id=?",
+        [item.local_id or "", server_id],
+    )
+    return server_id
+
+@app.post("/api/sync/push")
+def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
+    mappings = {"appointments": [], "breaks": []}
+    for index, item in enumerate(payload.appointments):
+        action = (item.action or "").replace("pending_", "")
+        if action == "create":
+            server_id = push_create_appointment(item, sess)
+        elif action == "update":
+            server_id = push_update_appointment(item, sess)
+        elif action == "delete":
+            server_id = push_delete_appointment(item, sess)
+        else:
+            raise HTTPException(400, f"Unsupported appointment action: {item.action}")
+        mappings["appointments"].append({
+            "local_id": push_local_key(item, f"appointment-{index}"),
+            "server_id": server_id,
+            "action": action,
+        })
+    for index, item in enumerate(payload.breaks):
+        action = (item.action or "").replace("pending_", "")
+        if action == "create":
+            server_id = push_create_break(item, sess)
+        elif action == "update":
+            server_id = push_update_break(item, sess)
+        elif action == "delete":
+            server_id = push_delete_break(item, sess)
+        else:
+            raise HTTPException(400, f"Unsupported break action: {item.action}")
+        mappings["breaks"].append({
+            "local_id": push_local_key(item, f"break-{index}"),
+            "server_id": server_id,
+            "action": action,
+        })
+    return {
+        "server_time": server_time_value(),
+        "mappings": mappings,
     }
 
 @app.get("/api/services")
