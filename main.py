@@ -1109,39 +1109,63 @@ def push_delete_break(item: SyncPushItem, sess: dict):
 @app.post("/api/sync/push")
 def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
     mappings = {"appointments": [], "breaks": []}
+    errors = []
     for index, item in enumerate(payload.appointments):
         action = (item.action or "").replace("pending_", "")
-        if action == "create":
-            server_id = push_create_appointment(item, sess)
-        elif action == "update":
-            server_id = push_update_appointment(item, sess)
-        elif action == "delete":
-            server_id = push_delete_appointment(item, sess)
-        else:
-            raise HTTPException(400, f"Unsupported appointment action: {item.action}")
-        mappings["appointments"].append({
-            "local_id": push_local_key(item, f"appointment-{index}"),
-            "server_id": server_id,
-            "action": action,
-        })
+        local_id = push_local_key(item, f"appointment-{index}")
+        try:
+            if action == "create":
+                server_id = push_create_appointment(item, sess)
+            elif action == "update":
+                server_id = push_update_appointment(item, sess)
+            elif action == "delete":
+                server_id = push_delete_appointment(item, sess)
+            else:
+                raise HTTPException(400, f"Unsupported appointment action: {item.action}")
+            mappings["appointments"].append({
+                "local_id": local_id,
+                "server_id": server_id,
+                "action": action,
+            })
+        except HTTPException as exc:
+            errors.append({
+                "type": "appointment",
+                "index": index,
+                "local_id": local_id,
+                "action": action,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            })
     for index, item in enumerate(payload.breaks):
         action = (item.action or "").replace("pending_", "")
-        if action == "create":
-            server_id = push_create_break(item, sess)
-        elif action == "update":
-            server_id = push_update_break(item, sess)
-        elif action == "delete":
-            server_id = push_delete_break(item, sess)
-        else:
-            raise HTTPException(400, f"Unsupported break action: {item.action}")
-        mappings["breaks"].append({
-            "local_id": push_local_key(item, f"break-{index}"),
-            "server_id": server_id,
-            "action": action,
-        })
+        local_id = push_local_key(item, f"break-{index}")
+        try:
+            if action == "create":
+                server_id = push_create_break(item, sess)
+            elif action == "update":
+                server_id = push_update_break(item, sess)
+            elif action == "delete":
+                server_id = push_delete_break(item, sess)
+            else:
+                raise HTTPException(400, f"Unsupported break action: {item.action}")
+            mappings["breaks"].append({
+                "local_id": local_id,
+                "server_id": server_id,
+                "action": action,
+            })
+        except HTTPException as exc:
+            errors.append({
+                "type": "break",
+                "index": index,
+                "local_id": local_id,
+                "action": action,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            })
     return {
         "server_time": server_time_value(),
         "mappings": mappings,
+        "errors": errors,
     }
 
 @app.get("/api/services")
