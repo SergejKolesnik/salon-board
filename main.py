@@ -276,6 +276,7 @@ class SyncPushItem(BaseModel):
     data: Dict[str, Any] = {}
 
 class SyncPushIn(BaseModel):
+    clients: list[SyncPushItem] = []
     appointments: list[SyncPushItem] = []
     breaks: list[SyncPushItem] = []
 
@@ -869,7 +870,7 @@ def update_client(client_id: int, data: ClientUpdate, token: str = Cookie(defaul
     if not rows:
         raise HTTPException(404, "РљР»С–С”РЅС‚Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ")
     turso_exec(
-        "UPDATE clients SET first_name=?, last_name=?, phone=?, birthday=?, notes=?, updated_at=datetime('now') WHERE id=?",
+        "UPDATE clients SET first_name=?, last_name=?, phone=?, birthday=?, notes=?, updated_at=datetime('now'), version=COALESCE(version,1)+1 WHERE id=?",
         [data.first_name, data.last_name, data.phone, data.birthday, data.notes, client_id]
     )
     return {"ok": True, "id": client_id}
@@ -892,15 +893,14 @@ def get_client_history(client_id: int, token: str = Cookie(default=None)):
 
 @app.get("/api/sync/bootstrap", response_model=SyncBootstrapResponse)
 def sync_bootstrap(sess=Depends(require_auth)):
-    cutoff = (date.today() - timedelta(days=90)).isoformat()
     master_id = sync_visible_master_id(sess)
     return {
         "server_time": server_time_value(),
         "masters": sync_masters(),
         "services": sync_services(),
         "clients": sync_clients(),
-        "appointments": sync_appointments("appt_date>=?", [cutoff], master_id),
-        "breaks": sync_breaks("break_date>=?", [cutoff], master_id),
+        "appointments": sync_appointments(master_id=master_id),
+        "breaks": sync_breaks(master_id=master_id),
     }
 
 @app.get("/api/sync/pull", response_model=SyncPullResponse)
@@ -958,6 +958,31 @@ def ensure_push_client(data: Dict[str, Any]):
         [first_name or "Клієнт", last_name, phone, str(uuid_lib.uuid4())],
     )
     return int(cid) if cid is not None else None
+
+def push_update_client(item: SyncPushItem, sess: dict):
+    server_id = push_item_server_id(item)
+    if not server_id:
+        raise HTTPException(400, "server_id is required for client update")
+    rows = turso("SELECT * FROM clients WHERE id=?", [server_id])
+    if not rows:
+        raise HTTPException(404, "Client not found")
+    data = {**rows[0], **(item.data or {})}
+    turso_exec(
+        """UPDATE clients
+           SET first_name=?,last_name=?,phone=?,birthday=?,notes=?,
+               updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id=?
+           WHERE id=?""",
+        [
+            data.get("first_name") or "",
+            data.get("last_name") or "",
+            data.get("phone") or "",
+            data.get("birthday") or "",
+            data.get("notes") or "",
+            item.local_id or "",
+            server_id,
+        ],
+    )
+    return server_id
 
 def push_create_appointment(item: SyncPushItem, sess: dict):
     data = item.data or {}
@@ -1108,8 +1133,30 @@ def push_delete_break(item: SyncPushItem, sess: dict):
 
 @app.post("/api/sync/push")
 def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
-    mappings = {"appointments": [], "breaks": []}
+    mappings = {"clients": [], "appointments": [], "breaks": []}
     errors = []
+    for index, item in enumerate(payload.clients):
+        action = (item.action or "").replace("pending_", "")
+        local_id = push_local_key(item, f"client-{index}")
+        try:
+            if action == "update" or action == "update_client":
+                server_id = push_update_client(item, sess)
+            else:
+                raise HTTPException(400, f"Unsupported client action: {item.action}")
+            mappings["clients"].append({
+                "local_id": local_id,
+                "server_id": server_id,
+                "action": "update",
+            })
+        except HTTPException as exc:
+            errors.append({
+                "type": "client",
+                "index": index,
+                "local_id": local_id,
+                "action": action,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            })
     for index, item in enumerate(payload.appointments):
         action = (item.action or "").replace("pending_", "")
         local_id = push_local_key(item, f"appointment-{index}")
@@ -1178,6 +1225,59 @@ def server_time():
     return {
         "server_time": server_time_value(),
         "timezone": "Europe/Kyiv",
+    }
+
+SERVER_BACKUP_DIR = os.environ.get("SERVER_BACKUP_DIR", "backups")
+
+def server_backup_payload():
+    return {
+        "created_at": server_time_value(),
+        "tables": {
+            "appointments": turso("SELECT * FROM appointments ORDER BY id"),
+            "clients": turso("SELECT * FROM clients ORDER BY id"),
+            "services": turso("SELECT * FROM services ORDER BY id"),
+            "breaks": turso("SELECT * FROM breaks ORDER BY id"),
+            "masters": turso("SELECT * FROM masters ORDER BY id"),
+            "settings": turso("SELECT key, value FROM settings ORDER BY key"),
+        },
+    }
+
+@app.post("/api/admin/backup")
+def create_admin_backup(sess=Depends(require_auth)):
+    os.makedirs(SERVER_BACKUP_DIR, exist_ok=True)
+    created_at = datetime.utcnow()
+    filename = f"salon-board-backup-{created_at.strftime('%Y-%m-%dT%H-%M-%SZ')}.json"
+    path = os.path.join(SERVER_BACKUP_DIR, filename)
+    payload = server_backup_payload()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    size = os.path.getsize(path)
+    return {
+        "ok": True,
+        "created_at": payload["created_at"],
+        "filename": filename,
+        "size_bytes": size,
+    }
+
+@app.get("/api/admin/backups")
+def list_admin_backups(sess=Depends(require_auth)):
+    if not os.path.isdir(SERVER_BACKUP_DIR):
+        return {"backups": [], "latest": None}
+    backups = []
+    for filename in os.listdir(SERVER_BACKUP_DIR):
+        if not filename.endswith(".json"):
+            continue
+        path = os.path.join(SERVER_BACKUP_DIR, filename)
+        stat = os.stat(path)
+        backups.append({
+            "filename": filename,
+            "size_bytes": stat.st_size,
+            "modified_at": datetime.utcfromtimestamp(stat.st_mtime).isoformat() + "Z",
+        })
+    backups.sort(key=lambda item: item["modified_at"], reverse=True)
+    return {
+        "backups": backups,
+        "latest": backups[0] if backups else None,
     }
 
 class ServiceIn(BaseModel):
