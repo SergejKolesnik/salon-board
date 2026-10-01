@@ -1323,6 +1323,17 @@ def logout(response: Response):
     response.delete_cookie("token")
     return {"ok": True}
 
+
+@app.post("/api/internal/body-balance/daily-reminder")
+def body_balance_daily_reminder():
+    """Run the Telegram reminder; intended for the trusted Hermes scheduler."""
+    from scripts.body_balance_daily import run_daily_reminder
+
+    try:
+        return run_daily_reminder(turso, turso_exec)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
 @app.get("/api/me")
 def me(token: str = Cookie(default=None)):
     sess = get_session(token)
