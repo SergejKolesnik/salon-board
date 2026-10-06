@@ -8,6 +8,8 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .spacer{flex:1}
 .clients-btn{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;cursor:pointer;font-family:var(--font-head);font-size:13px;font-weight:700;color:var(--text)}
 .clients-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+.services-btn{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;cursor:pointer;font-family:var(--font-head);font-size:13px;font-weight:700;color:var(--text)}
+.services-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
 .date-nav{display:flex;align-items:center;gap:8px;padding:12px 20px;flex-shrink:0;background:var(--surface2);border-bottom:1px solid var(--border)}
 .date-nav button{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;cursor:pointer;font-family:var(--font);font-size:13px;color:var(--text)}
 .today-btn{background:var(--accent)!important;color:#121214!important;border-color:var(--accent)!important;font-weight:700!important}
@@ -64,6 +66,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .form-row label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;font-family:var(--font-head);text-transform:uppercase;letter-spacing:.3px}
 .form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--bg);color:var(--text);outline:none;transition:border-color .12s}
 .form-row input:focus,.form-row select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,200,180,.15)}
+.service-picker{display:flex;gap:6px;align-items:center}.service-picker select{flex:1}.service-add-btn{white-space:nowrap;padding:9px 10px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-light);color:var(--accent);cursor:pointer;font-weight:700}.service-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.service-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:var(--accent-light);border:1px solid rgba(0,200,180,.35);color:var(--accent);font-size:12px}.service-chip button{border:0;background:none;color:inherit;cursor:pointer;padding:0;font-size:14px;line-height:1}.service-manager-list{max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm);margin:10px 0}.service-manager-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--border)}.service-manager-row:last-child{border-bottom:0}.service-manager-row span{flex:1}.service-manager-row button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 5px}.service-manager-row button:last-child{color:var(--danger)}
 .form-2col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .modal-footer{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
 .btn{padding:8px 16px;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-head);font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--text)}
@@ -111,6 +114,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 @media(min-width:769px){.desktop-only{display:flex!important}}
 @media(max-width:768px){.content{display:none!important}.mobile-wrap{display:flex!important}}
 @media(max-width:768px){.schedule-status{top:12px;max-width:calc(100% - 24px);text-align:center;white-space:normal}}
+@media(max-width:520px){.topbar{gap:7px;padding:0 10px;height:72px}.topbar img{height:42px}.clients-btn,.services-btn{padding:7px 8px;font-size:11px}.role-badge{display:none}.modal{padding:18px}.service-picker{align-items:stretch;flex-direction:column}.service-add-btn{width:100%}}
 
 .time-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .time-btn{padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px;font-family:var(--font-head);color:var(--muted);cursor:pointer}
