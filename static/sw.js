@@ -1,6 +1,6 @@
 // Bump this when the shell JavaScript/CSS changes so installed PWAs fetch the
 // current UI instead of retaining an older cached bundle.
-const CACHE_NAME = "salon-board-shell-v8";
+const CACHE_NAME = "salon-board-shell-v9";
 const SHELL_URLS = [
   "/manifest.json",
   "/api/icon",
@@ -12,7 +12,14 @@ const SHELL_SET = new Set(SHELL_URLS);
 self.addEventListener("install", function(event){
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(function(cache){return cache.addAll(SHELL_URLS);})
+      .then(function(cache){
+        return Promise.all(SHELL_URLS.map(function(url){
+          return fetch(new Request(url, {cache:"reload"})).then(function(response){
+            if(!response.ok)throw new Error("Failed to cache "+url);
+            return cache.put(url, response);
+          });
+        }));
+      })
       .then(function(){return self.skipWaiting();})
   );
 });
