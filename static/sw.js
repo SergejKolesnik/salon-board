@@ -1,6 +1,6 @@
 // Bump this when the shell JavaScript/CSS changes so installed PWAs fetch the
 // current UI instead of retaining an older cached bundle.
-const CACHE_NAME = "salon-board-shell-v7";
+const CACHE_NAME = "salon-board-shell-v8";
 const SHELL_URLS = [
   "/manifest.json",
   "/api/icon",
@@ -39,7 +39,7 @@ self.addEventListener("fetch", function(event){
   if(event.request.method==="GET" && SHELL_SET.has(path)){
     event.respondWith(
       caches.match(event.request).then(function(cached){
-        return cached || fetch(event.request).then(function(response){
+        return cached || fetch(new Request(event.request, {cache:"reload"})).then(function(response){
           const copy=response.clone();
           caches.open(CACHE_NAME).then(function(cache){cache.put(event.request,copy);});
           return response;
