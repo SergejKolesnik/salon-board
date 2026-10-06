@@ -394,7 +394,11 @@ function rowOf(id){const el=document.getElementById(id);return el?el.closest(".f
 function toggleEventType(){updateEventTypeUi();}
 function ensureEventTypeUi(){
   const existingType=document.getElementById("fEventType");
-  if(existingType){existingType.onchange=toggleEventType;return;}
+  if(existingType){
+    existingType.onchange=toggleEventType;
+    ensureServicePickerUi(rowOf("fService"));
+    return;
+  }
   const clientRow=rowOf("fClient");
   if(clientRow){
     const typeRow=document.createElement("div");
