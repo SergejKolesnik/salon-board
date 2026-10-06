@@ -20,6 +20,7 @@ class MultiServiceContractTests(unittest.TestCase):
         css = (ROOT / "static/css/master.css").read_text(encoding="utf-8")
         for marker in ("serviceChips", "addSelectedService", "Керування послугами", "/api/services"):
             self.assertIn(marker, js)
+        self.assertIn('ensureServicePickerUi(rowOf("fService"))', js)
         self.assertIn(".service-chip", css)
 
     def test_resolve_services_keeps_requested_order(self):
