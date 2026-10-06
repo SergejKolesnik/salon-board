@@ -2,7 +2,7 @@
 const HOURS=(()=>{const s=[];for(let h=9;h<=18;h++){s.push(String(h).padStart(2,"0")+":00");if(h<18)s.push(String(h).padStart(2,"0")+":30");}return s;})();
 const DAYS=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
 const MONTHS=["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
-let appointments=[],breaks=[],masterId=null,services=[];
+let appointments=[],breaks=[],masterId=null,services=[],selectedServiceIds=[];
 let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
 let editingId=null,editingBreakId=null,mobileDay=new Date();
@@ -162,6 +162,7 @@ async function loadWeek(){
 function updateDatalist(){
   const sel=document.getElementById("fService");
   if(sel&&services.length) sel.innerHTML=services.map(s=>`<option value="${s.name}">${s.name}</option>`).join("");
+  renderServicePicker();
 }
 function renderAll(){
   const days=Array.from({length:viewDays},(_,i)=>addDays(periodStart,i));
@@ -405,6 +406,7 @@ function ensureEventTypeUi(){
   }
   const serviceRow=rowOf("fService");
   if(serviceRow){
+    ensureServicePickerUi(serviceRow);
     const reasonRow=document.createElement("div");
     reasonRow.className="form-row hidden";
     reasonRow.id="breakReasonRow";
@@ -427,6 +429,7 @@ function openAddModal(date,time){
   editingId=null;
   editingBreakId=null;
   selectedClientId=null;hideClientSuggestions();
+  selectedServiceIds=[];
   ensureEventTypeUi();
   document.getElementById("modalTitle").textContent="Новий запис";
   document.getElementById("deleteBtn").classList.add("hidden");
@@ -435,6 +438,7 @@ function openAddModal(date,time){
   document.getElementById("fClient").value="";
   var ph=document.getElementById("fPhone");if(ph)ph.value="";
   document.getElementById("fService").value="";
+  renderServicePicker();
   document.getElementById("fDate").value=date||isoDate(mobileDay||new Date());
   document.getElementById("fTime").value=(time||"10:00").slice(0,5);
   document.getElementById("fDuration").value="60";
@@ -468,6 +472,9 @@ document.getElementById("deleteBtn").classList.remove("hidden");
 var et=document.getElementById("fEventType");if(et)et.value="appointment";
 document.getElementById("fClient").value=a.client_name;
 document.getElementById("fService").value=a.service;
+selectedServiceIds=(a.service_ids||[]).map(Number);
+if(!selectedServiceIds.length){const legacy=services.find(function(s){return s.name===a.service;});if(legacy)selectedServiceIds=[Number(legacy.id)];}
+renderServicePicker();
 document.getElementById("fDate").value=a.appt_date;
 document.getElementById("fTime").value=a.start_time;
 document.getElementById("fDuration").value=a.duration_min;
@@ -562,6 +569,7 @@ async function saveAppt(){
     return;
   }
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
+  body.service_ids=selectedServiceIds.slice();
   if(!body.client_name||!body.service){alert("Заповніть ім\u0027я і послугу");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
   const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -632,6 +640,9 @@ safeClick("detailEditBtn",function(){
   document.getElementById("deleteBtn").classList.remove("hidden");
   document.getElementById("fClient").value=a.client_name;
   document.getElementById("fService").value=a.service;
+  selectedServiceIds=(a.service_ids||[]).map(Number);
+  if(!selectedServiceIds.length){const legacy=services.find(function(s){return s.name===a.service;});if(legacy)selectedServiceIds=[Number(legacy.id)];}
+  renderServicePicker();
   document.getElementById("fDate").value=a.appt_date;
   document.getElementById("fTime").value=a.start_time;
   document.getElementById("fDuration").value=a.duration_min;
@@ -913,3 +924,110 @@ function fmtPhone(el){
   if(raw.length>8) res+="-"+raw.slice(8,10);
   el.value=res;
 }
+
+// Multi-service appointment picker and catalog management for masters.
+function ensureServicePickerUi(serviceRow){
+  if(!serviceRow||document.getElementById("servicePicker"))return;
+  const select=document.getElementById("fService");
+  if(!select)return;
+  select.style.display="none";
+  const picker=document.createElement("div");
+  picker.id="servicePicker";
+  picker.className="service-picker";
+  picker.innerHTML='<select id="servicePickerSelect" aria-label="Додати процедуру"></select><button type="button" class="service-add-btn" onclick="addSelectedService()">+ Додати</button>';
+  select.parentNode.insertBefore(picker,select);
+  const chips=document.createElement("div");
+  chips.id="serviceChips";
+  chips.className="service-chips";
+  picker.appendChild(chips);
+  renderServicePicker();
+}
+
+function renderServicePicker(){
+  const picker=document.getElementById("servicePicker");
+  if(!picker)return;
+  const selected=new Set(selectedServiceIds.map(Number));
+  const select=document.getElementById("servicePickerSelect");
+  if(select){
+    const available=services.filter(function(s){return !selected.has(Number(s.id));});
+    select.innerHTML='<option value="">Оберіть процедуру...</option>'+available.map(function(s){return '<option value="'+s.id+'">'+escapeHtml(s.name)+'</option>';}).join("");
+  }
+  const chips=document.getElementById("serviceChips");
+  if(chips){
+    chips.innerHTML=selectedServiceIds.map(function(id){
+      const service=services.find(function(s){return Number(s.id)===Number(id);});
+      if(!service)return "";
+      return '<span class="service-chip">'+escapeHtml(service.name)+'<button type="button" aria-label="Видалити '+escapeHtml(service.name)+'" onclick="removeSelectedService('+Number(id)+')">×</button></span>';
+    }).join("");
+  }
+  const hidden=document.getElementById("fService");
+  if(hidden){hidden.value=selectedServiceIds.map(function(id){const s=services.find(function(x){return Number(x.id)===Number(id);});return s?s.name:"";}).filter(Boolean).join(" + ");}
+}
+
+function addSelectedService(){
+  const select=document.getElementById("servicePickerSelect");
+  const id=select&&Number(select.value);
+  if(!id||selectedServiceIds.indexOf(id)!==-1)return;
+  selectedServiceIds.push(id);
+  if(select)select.value="";
+  renderServicePicker();
+}
+function removeSelectedService(id){
+  selectedServiceIds=selectedServiceIds.filter(function(value){return Number(value)!==Number(id);});
+  renderServicePicker();
+}
+
+function ensureMasterServiceUi(){
+  const topbar=document.querySelector(".topbar");
+  const spacer=document.querySelector(".topbar .spacer");
+  if(topbar&&spacer&&!document.getElementById("servicesBtn")){
+    const button=document.createElement("button");
+    button.id="servicesBtn";button.type="button";button.className="services-btn";button.textContent="⚙ Послуги";
+    button.onclick=openServiceManager;
+    topbar.insertBefore(button,spacer.nextSibling);
+  }
+  if(!document.getElementById("serviceManagerOverlay")){
+    const overlay=document.createElement("div");
+    overlay.id="serviceManagerOverlay";overlay.className="overlay hidden";
+    overlay.innerHTML='<div class="modal"><h2>Керування послугами</h2><div id="serviceManagerList" class="service-manager-list"></div><div class="service-picker"><input id="newMasterServiceName" type="text" placeholder="Нова процедура..."><button type="button" class="service-add-btn" onclick="createMasterService()">+ Додати</button></div><div class="modal-footer"><button class="btn" type="button" onclick="closeServiceManager()">Закрити</button></div></div>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click",function(e){if(e.target===overlay)closeServiceManager();});
+  }
+}
+async function openServiceManager(){
+  ensureMasterServiceUi();
+  document.getElementById("serviceManagerOverlay").classList.remove("hidden");
+  await refreshMasterServices();
+}
+function closeServiceManager(){const el=document.getElementById("serviceManagerOverlay");if(el)el.classList.add("hidden");}
+async function refreshMasterServices(){
+  const res=await fetch("/api/services");
+  if(!res.ok){alert("Не вдалося завантажити послуги");return;}
+  services=await res.json();
+  updateDatalist();
+  const list=document.getElementById("serviceManagerList");
+  if(!list)return;
+  list.innerHTML=services.length?services.map(function(s){return '<div class="service-manager-row"><span>'+escapeHtml(s.name)+'</span><button type="button" onclick="renameMasterService('+s.id+')">✎</button><button type="button" onclick="deleteMasterService('+s.id+')">×</button></div>';}).join(""): '<div style="padding:12px;color:var(--hint)">Послуг ще немає</div>';
+}
+async function createMasterService(){
+  const input=document.getElementById("newMasterServiceName");
+  const name=input.value.trim();if(!name)return;
+  const res=await fetch("/api/services",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,sort_order:services.length})});
+  if(!res.ok){const e=await res.json();alert(e.detail||"Не вдалося додати послугу");return;}
+  input.value="";showToast("Послугу додано");await refreshMasterServices();
+}
+async function renameMasterService(id){
+  const service=services.find(function(s){return Number(s.id)===Number(id);});if(!service)return;
+  const name=prompt("Нова назва:",service.name);if(!name||name.trim()===service.name)return;
+  const res=await fetch("/api/services/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:name.trim(),sort_order:service.sort_order,price_cents:service.price_cents,duration_min:service.duration_min})});
+  if(!res.ok){const e=await res.json();alert(e.detail||"Не вдалося перейменувати послугу");return;}
+  showToast("Послугу оновлено");await refreshMasterServices();
+}
+async function deleteMasterService(id){
+  if(!confirm("Видалити послугу з каталогу? Старі записи збережуть її назву."))return;
+  const res=await fetch("/api/services/"+id,{method:"DELETE"});
+  if(!res.ok){const e=await res.json();alert(e.detail||"Не вдалося видалити послугу");return;}
+  removeSelectedService(id);showToast("Послугу видалено");await refreshMasterServices();
+}
+
+ensureMasterServiceUi();

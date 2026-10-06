@@ -91,6 +91,16 @@ def init_db():
         """CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, role TEXT NOT NULL, master_id INTEGER, created_at TEXT DEFAULT (datetime('now')))""",
         "INSERT OR IGNORE INTO settings (key,value) VALUES ('pwd_admin','admin123')",
         """CREATE TABLE IF NOT EXISTS services (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0)""",
+        """CREATE TABLE IF NOT EXISTS appointment_services (
+            appointment_id INTEGER NOT NULL,
+            service_id INTEGER,
+            service_name TEXT NOT NULL,
+            price_cents INTEGER,
+            duration_min INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (appointment_id, sort_order)
+        )""",
         # role_templates: шаблони прав
         """CREATE TABLE IF NOT EXISTS role_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,11 +188,44 @@ def init_db():
             turso_exec(f"UPDATE {table} SET updated_at=datetime('now') WHERE updated_at IS NULL", [])
         except Exception:
             pass
+    # Service catalog metadata is additive and future-ready; existing rows remain valid.
+    for column_sql in ["price_cents INTEGER", "duration_min INTEGER"]:
+        try:
+            turso_exec(f"ALTER TABLE services ADD COLUMN {column_sql}", [])
+        except Exception:
+            pass
+
     # Default services
     svc_rows = turso("SELECT COUNT(*) as cnt FROM services")
     if int(svc_rows[0]["cnt"]) == 0:
         for i, name in enumerate(["Чистка шкіри","Пілінг","ГАК","Ботокс / філери","Полінуклеотіди","Догляд","Дерматологія","Псоролайт","Консультація"]):
             turso_exec("INSERT INTO services (name, sort_order) VALUES (?,?)", [name, i])
+    # Backfill legacy appointments once. Exact catalog matches get a service_id;
+    # unmatched historical text is preserved as a snapshot with service_id=NULL.
+    try:
+        turso_exec("""
+            INSERT INTO appointment_services
+                (appointment_id, service_id, service_name, sort_order)
+            SELECT a.id, s.id, s.name, 0
+            FROM appointments a JOIN services s ON s.name = a.service
+            WHERE COALESCE(a.service, '') <> ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id
+              )
+        """, [])
+        turso_exec("""
+            INSERT INTO appointment_services
+                (appointment_id, service_id, service_name, sort_order)
+            SELECT a.id, NULL, a.service, 0
+            FROM appointments a
+            WHERE COALESCE(a.service, '') <> ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id
+              )
+        """, [])
+    except Exception:
+        # Do not prevent the application from starting on a partially migrated DB.
+        pass
     # Default role templates
     tpl_rows = turso("SELECT COUNT(*) as cnt FROM role_templates")
     if int(tpl_rows[0]["cnt"]) == 0:
@@ -208,6 +251,7 @@ class AppointmentIn(BaseModel):
     notes: str = ""
     client_id: Optional[int] = None
     status: str = "scheduled"
+    service_ids: list[int] = []
 
 class AppointmentUpdate(BaseModel):
     client_name: Optional[str] = None
@@ -217,6 +261,7 @@ class AppointmentUpdate(BaseModel):
     duration_min: Optional[int] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    service_ids: Optional[list[int]] = None
 
 class BreakIn(BaseModel):
     master_id: int
@@ -343,14 +388,79 @@ def require_admin(token: str = Cookie(default=None)):
         raise HTTPException(403, "Тільки адмін")
     return sess
 
+def require_service_manager(token: str = Cookie(default=None)):
+    """Allow admins and authenticated masters to manage the shared catalog."""
+    sess = require_auth(token)
+    if sess["role"] not in ("admin", "master"):
+        raise HTTPException(403, "Недостатньо прав")
+    return sess
+
+def appointment_service_rows(appointment_id: int) -> list[dict]:
+    rows = turso(
+        "SELECT appointment_id, service_id, service_name, price_cents, duration_min, sort_order "
+        "FROM appointment_services WHERE appointment_id=? ORDER BY sort_order, service_name",
+        [appointment_id],
+    )
+    return [
+        {
+            **row,
+            "appointment_id": int(row["appointment_id"]),
+            "service_id": int(row["service_id"]) if row.get("service_id") not in (None, "") else None,
+            "price_cents": int(row["price_cents"]) if row.get("price_cents") not in (None, "") else None,
+            "duration_min": int(row["duration_min"]) if row.get("duration_min") not in (None, "") else None,
+            "sort_order": int(row.get("sort_order") or 0),
+        }
+        for row in rows
+    ]
+
 def appointment_response(r: dict) -> dict:
-    return {
+    data = {
         **r,
         'id': int(r['id']),
         'master_id': int(r['master_id']),
         'duration_min': int(r['duration_min']),
         'status': r.get('status') or 'scheduled',
     }
+    data["services"] = appointment_service_rows(data["id"])
+    data["service_ids"] = [s["service_id"] for s in data["services"] if s["service_id"] is not None]
+    return data
+
+def resolve_services(service_ids: list[int], legacy_name: str = "") -> tuple[list[dict], str]:
+    ids = []
+    for value in service_ids or []:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in ids:
+            ids.append(value)
+    rows = []
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        found = turso(f"SELECT id,name,price_cents,duration_min FROM services WHERE id IN ({placeholders})", ids)
+        by_id = {int(row["id"]): row for row in found}
+        missing = [value for value in ids if value not in by_id]
+        if missing:
+            raise HTTPException(400, "Одна з вибраних послуг більше не існує")
+        rows = [by_id[value] for value in ids]
+        return rows, " + ".join(row["name"] for row in rows)
+    legacy_name = (legacy_name or "").strip()
+    if not legacy_name:
+        raise HTTPException(400, "Оберіть хоча б одну послугу")
+    exact = turso("SELECT id,name,price_cents,duration_min FROM services WHERE name=? LIMIT 1", [legacy_name])
+    return (exact, legacy_name)
+
+def replace_appointment_services(appointment_id: int, service_rows: list[dict], legacy_name: str = ""):
+    turso_exec("DELETE FROM appointment_services WHERE appointment_id=?", [appointment_id])
+    if not service_rows:
+        service_rows = [{"id": None, "name": legacy_name.strip(), "price_cents": None, "duration_min": None}]
+    for order, row in enumerate(service_rows):
+        if not row.get("name"):
+            continue
+        turso_exec(
+            "INSERT INTO appointment_services (appointment_id,service_id,service_name,price_cents,duration_min,sort_order) VALUES (?,?,?,?,?,?)",
+            [appointment_id, row.get("id"), row["name"], row.get("price_cents"), row.get("duration_min"), order],
+        )
 
 def server_time_value() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
@@ -403,7 +513,13 @@ def sync_appointments(where_sql="", params=None, master_id=None):
         values.append(master_id)
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     rows = turso(f"SELECT * FROM appointments {where} ORDER BY appt_date, start_time, id", values)
-    return [sync_row(r, ["master_id", "duration_min", "client_id"]) for r in rows]
+    result = []
+    for row in rows:
+        item = sync_row(row, ["master_id", "duration_min", "client_id"])
+        item["services"] = appointment_service_rows(int(row["id"]))
+        item["service_ids"] = [s["service_id"] for s in item["services"] if s["service_id"] is not None]
+        result.append(item)
+    return result
 
 def sync_breaks(where_sql="", params=None, master_id=None):
     filters = []
@@ -476,6 +592,7 @@ def update_master(master_id: int, m: MasterIn, sess=Depends(require_admin)):
 
 @app.delete("/api/masters/{master_id}")
 def delete_master(master_id: int, sess=Depends(require_admin)):
+    turso_exec("DELETE FROM appointment_services WHERE appointment_id IN (SELECT id FROM appointments WHERE master_id=?)", [master_id])
     turso_exec("DELETE FROM appointments WHERE master_id=?", [master_id])
     turso_exec("DELETE FROM breaks WHERE master_id=?", [master_id])
     turso_exec("DELETE FROM master_roles WHERE master_id=?", [master_id])
@@ -630,6 +747,7 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
         raise HTTPException(401, "Не авторизовано")
     ensure_can_write_master(a.master_id, sess)
     check_appointment_conflicts(a.master_id, a.appt_date, a.start_time, a.duration_min)
+    selected_services, service_label = resolve_services(a.service_ids, a.service)
     # ─── CRM: знайти або створити клієнта ────────────────────────────────
     client_id = None
     # Якщо client_id переданий явно з фронтенду — перевірити чи існує
@@ -663,12 +781,15 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
             client_id = int(cid) if cid is not None else None
     # ─────────────────────────────────────────────────────────────────────
     status = a.status or "scheduled"
-    turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id,status) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    [a.master_id, a.client_name, a.phone, a.service, a.appt_date, a.start_time, a.duration_min, a.notes, client_id, status])
+    appointment_id = turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id,status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    [a.master_id, a.client_name, a.phone, service_label, a.appt_date, a.start_time, a.duration_min, a.notes, client_id, status])
+    appointment_id = int(appointment_id) if appointment_id is not None else None
+    if appointment_id:
+        replace_appointment_services(appointment_id, selected_services, service_label)
     rows = turso("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date=? AND a.start_time=? ORDER BY a.id DESC LIMIT 1",
                  [a.master_id, a.appt_date, a.start_time])
     if not rows:
-        return {"ok": True, "master_id": a.master_id, "client_name": a.client_name, "service": a.service, "appt_date": a.appt_date, "start_time": a.start_time, "duration_min": a.duration_min, "notes": a.notes, "status": status}
+        return {"ok": True, "master_id": a.master_id, "client_name": a.client_name, "service": service_label, "appt_date": a.appt_date, "start_time": a.start_time, "duration_min": a.duration_min, "notes": a.notes, "status": status, "service_ids": [int(row["id"]) for row in selected_services]}
     r = rows[0]
     return appointment_response(r)
 
@@ -689,12 +810,24 @@ def update_appointment(appt_id: int, a: AppointmentUpdate, token: str = Cookie(d
     elif sess['role'] not in ('admin', 'master'):
         raise HTTPException(403, "Недостатньо прав")
     data = dict(existing)
-    for k, v in a.dict(exclude_none=True).items():
+    update_data = a.dict(exclude_none=True)
+    service_ids = update_data.pop("service_ids", None)
+    for k, v in update_data.items():
         data[k] = v
     data["status"] = data.get("status") or "scheduled"
+    if service_ids is not None or "service" in update_data:
+        selected_services, service_label = resolve_services(service_ids or [], data.get("service", ""))
+        data["service"] = service_label
+    else:
+        selected_services = appointment_service_rows(appt_id)
     check_appointment_conflicts(int(data["master_id"]), data["appt_date"], data["start_time"], int(data["duration_min"]), appt_id)
     turso_exec("UPDATE appointments SET client_name=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=?,status=? WHERE id=?",
               [data["client_name"], data["service"], data["appt_date"], data["start_time"], data["duration_min"], data["notes"], data["status"], appt_id])
+    if service_ids is not None or "service" in update_data:
+        replace_appointment_services(appt_id, [
+            {"id": row.get("service_id"), "name": row.get("service_name"), "price_cents": row.get("price_cents"), "duration_min": row.get("duration_min")}
+            for row in selected_services
+        ], data["service"])
     rows2 = turso("SELECT a.*,m.name as master_name,m.color,m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.id=?", [appt_id])
     r = rows2[0]
     return appointment_response(r)
@@ -712,6 +845,7 @@ def delete_appointment(appt_id: int, token: str = Cookie(default=None)):
         perms = get_master_perms(sess['master_id'])
         if not perms['can_edit_others'] and int(existing['master_id']) != sess['master_id']:
             raise HTTPException(403, "Можна видаляти лише свої записи")
+    turso_exec("DELETE FROM appointment_services WHERE appointment_id=?", [appt_id])
     turso_exec("DELETE FROM appointments WHERE id=?", [appt_id])
     return {"ok": True}
 
@@ -992,6 +1126,7 @@ def push_create_appointment(item: SyncPushItem, sess: dict):
     ensure_can_write_master(master_id, sess)
     duration_min = int(data.get("duration_min") or 60)
     check_appointment_conflicts(master_id, data.get("appt_date"), data.get("start_time"), duration_min)
+    selected_services, service_label = resolve_services(data.get("service_ids") or [], data.get("service") or "")
     client_id = ensure_push_client(data)
     rid = turso_exec(
         """INSERT INTO appointments
@@ -1001,7 +1136,7 @@ def push_create_appointment(item: SyncPushItem, sess: dict):
             master_id,
             data.get("client_name") or "",
             data.get("phone") or "",
-            data.get("service") or "",
+            service_label,
             data.get("appt_date"),
             data.get("start_time"),
             duration_min,
@@ -1012,6 +1147,7 @@ def push_create_appointment(item: SyncPushItem, sess: dict):
             item.local_id or "",
         ],
     )
+    replace_appointment_services(int(rid), selected_services, service_label)
     return int(rid)
 
 def push_update_appointment(item: SyncPushItem, sess: dict):
@@ -1029,6 +1165,12 @@ def push_update_appointment(item: SyncPushItem, sess: dict):
     duration_min = int(data.get("duration_min") or existing.get("duration_min") or 60)
     check_appointment_conflicts(master_id, data.get("appt_date"), data.get("start_time"), duration_min, server_id)
     client_id = ensure_push_client(data)
+    has_service_update = "service_ids" in (item.data or {}) or "service" in (item.data or {})
+    if has_service_update:
+        selected_services, service_label = resolve_services(data.get("service_ids") or [], data.get("service") or "")
+    else:
+        selected_services = [{"id": row.get("service_id"), "name": row.get("service_name"), "price_cents": row.get("price_cents"), "duration_min": row.get("duration_min")} for row in appointment_service_rows(server_id)]
+        service_label = existing.get("service") or ""
     turso_exec(
         """UPDATE appointments
            SET master_id=?,client_name=?,phone=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=?,client_id=?,status=?,
@@ -1038,7 +1180,7 @@ def push_update_appointment(item: SyncPushItem, sess: dict):
             master_id,
             data.get("client_name") or "",
             data.get("phone") or "",
-            data.get("service") or "",
+            service_label,
             data.get("appt_date"),
             data.get("start_time"),
             duration_min,
@@ -1049,6 +1191,8 @@ def push_update_appointment(item: SyncPushItem, sess: dict):
             server_id,
         ],
     )
+    if has_service_update:
+        replace_appointment_services(server_id, selected_services, service_label)
     return server_id
 
 def push_delete_appointment(item: SyncPushItem, sess: dict):
@@ -1236,6 +1380,7 @@ def server_backup_payload():
             "appointments": turso("SELECT * FROM appointments ORDER BY id"),
             "clients": turso("SELECT * FROM clients ORDER BY id"),
             "services": turso("SELECT * FROM services ORDER BY id"),
+            "appointment_services": turso("SELECT * FROM appointment_services ORDER BY appointment_id, sort_order"),
             "breaks": turso("SELECT * FROM breaks ORDER BY id"),
             "masters": turso("SELECT * FROM masters ORDER BY id"),
             "settings": turso("SELECT key, value FROM settings ORDER BY key"),
@@ -1283,19 +1428,36 @@ def list_admin_backups(sess=Depends(require_auth)):
 class ServiceIn(BaseModel):
     name: str
     sort_order: int = 0
+    price_cents: Optional[int] = None
+    duration_min: Optional[int] = None
 
 @app.post("/api/services", status_code=201)
-def create_service(s: ServiceIn, sess=Depends(require_admin)):
-    rid = turso_exec("INSERT INTO services (name, sort_order) VALUES (?,?)", [s.name, s.sort_order])
-    return {"id": int(rid), "name": s.name, "sort_order": s.sort_order}
+def create_service(s: ServiceIn, sess=Depends(require_service_manager)):
+    name = s.name.strip()
+    if not name:
+        raise HTTPException(400, "Назва послуги не може бути порожньою")
+    if turso("SELECT id FROM services WHERE name=? LIMIT 1", [name]):
+        raise HTTPException(409, "Така послуга вже існує")
+    rid = turso_exec("INSERT INTO services (name, sort_order, price_cents, duration_min) VALUES (?,?,?,?)", [name, s.sort_order, s.price_cents, s.duration_min])
+    return {"id": int(rid), "name": name, "sort_order": s.sort_order, "price_cents": s.price_cents, "duration_min": s.duration_min}
 
 @app.put("/api/services/{svc_id}")
-def update_service(svc_id: int, s: ServiceIn, sess=Depends(require_admin)):
-    turso_exec("UPDATE services SET name=?, sort_order=? WHERE id=?", [s.name, s.sort_order, svc_id])
-    return {"id": svc_id, "name": s.name, "sort_order": s.sort_order}
+def update_service(svc_id: int, s: ServiceIn, sess=Depends(require_service_manager)):
+    name = s.name.strip()
+    if not name:
+        raise HTTPException(400, "Назва послуги не може бути порожньою")
+    if not turso("SELECT id FROM services WHERE id=?", [svc_id]):
+        raise HTTPException(404, "Послугу не знайдено")
+    duplicate = turso("SELECT id FROM services WHERE name=? AND id<>? LIMIT 1", [name, svc_id])
+    if duplicate:
+        raise HTTPException(409, "Така послуга вже існує")
+    turso_exec("UPDATE services SET name=?, sort_order=?, price_cents=?, duration_min=? WHERE id=?", [name, s.sort_order, s.price_cents, s.duration_min, svc_id])
+    return {"id": svc_id, "name": name, "sort_order": s.sort_order, "price_cents": s.price_cents, "duration_min": s.duration_min}
 
 @app.delete("/api/services/{svc_id}")
-def delete_service(svc_id: int, sess=Depends(require_admin)):
+def delete_service(svc_id: int, sess=Depends(require_service_manager)):
+    if not turso("SELECT id FROM services WHERE id=?", [svc_id]):
+        raise HTTPException(404, "Послугу не знайдено")
     turso_exec("DELETE FROM services WHERE id=?", [svc_id])
     return {"ok": True}
 
@@ -1362,6 +1524,7 @@ def get_passwords(sess=Depends(require_admin)):
 
 @app.delete("/api/clear-demo")
 def clear_demo():
+    turso_exec("DELETE FROM appointment_services")
     turso_exec("DELETE FROM appointments")
     turso_exec("DELETE FROM breaks")
     turso_exec("DELETE FROM sessions")
