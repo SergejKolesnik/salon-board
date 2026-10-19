@@ -300,6 +300,9 @@ class ClientUpdate(BaseModel):
     birthday: str = ""
     notes: str = ""
 
+class ClientCreate(ClientUpdate):
+    first_name: str
+
 class SyncBootstrapResponse(BaseModel):
     server_time: str
     masters: list[Dict[str, Any]]
@@ -929,6 +932,45 @@ def breaks_range(master_id: int, from_date: str = None, to_date: str = None):
     return [{**r, 'id': int(r['id']), 'master_id': int(r['master_id'])} for r in rows]
 
 # ─── CRM: CLIENTS ──────────────────────────────────────────────────────────────
+
+@app.post("/api/clients", status_code=201)
+def create_client(data: ClientCreate, token: str = Cookie(default=None)):
+    sess = get_session(token)
+    if not sess:
+        raise HTTPException(401, "Не авторизовано")
+
+    first_name = data.first_name.strip()
+    if not first_name:
+        raise HTTPException(400, "Вкажіть ім'я клієнта")
+
+    phone = data.phone.strip()
+    if phone:
+        existing = turso("SELECT id FROM clients WHERE phone=? AND deleted_at IS NULL", [phone])
+        if existing:
+            raise HTTPException(409, "Клієнт з таким телефоном уже існує")
+
+    client_uuid = str(uuid_lib.uuid4())
+    client_id = turso_exec(
+        """INSERT INTO clients
+           (first_name,last_name,phone,birthday,notes,uuid,updated_at,version)
+           VALUES (?,?,?,?,?,?,datetime('now'),1)""",
+        [first_name, data.last_name.strip(), phone, data.birthday.strip(), data.notes.strip(), client_uuid]
+    )
+    rows = turso("SELECT * FROM clients WHERE uuid=? ORDER BY id DESC LIMIT 1", [client_uuid])
+    if not rows and client_id is not None:
+        rows = turso("SELECT * FROM clients WHERE id=?", [client_id])
+    if not rows:
+        raise HTTPException(500, "Не вдалося створити клієнта")
+
+    client = rows[0]
+    return {
+        "id": int(client["id"]),
+        "first_name": client.get("first_name", ""),
+        "last_name": client.get("last_name", ""),
+        "phone": client.get("phone", ""),
+        "birthday": client.get("birthday", ""),
+        "notes": client.get("notes", ""),
+    }
 
 @app.get("/api/clients")
 def list_clients(token: str = Cookie(default=None)):

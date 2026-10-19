@@ -56,6 +56,7 @@ cosmo-schedule/
 | POST | `/api/appointments` | Створити запис |
 | PUT | `/api/appointments/{id}` | Оновити запис |
 | DELETE | `/api/appointments/{id}` | Видалити запис |
+| POST | `/api/clients` | Створити клієнта CRM |
 | GET | `/api/breaks?date=YYYY-MM-DD` | Перерви на дату |
 
 ## Наступні кроки

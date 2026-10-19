@@ -23,6 +23,20 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('ensureServicePickerUi(rowOf("fService"))', js)
         self.assertIn(".service-chip", css)
 
+    def test_master_can_create_and_select_client_without_resetting_appointment(self):
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
+        js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
+        css = (ROOT / "static/css/master.css").read_text(encoding="utf-8")
+        worker = (ROOT / "static/sw.js").read_text(encoding="utf-8")
+
+        self.assertIn('@app.post("/api/clients", status_code=201)', source)
+        self.assertIn('button.textContent="+ Додати клієнта"', js)
+        self.assertIn('fetch("/api/clients",{method:"POST"', js)
+        self.assertIn('selectClient(Number(client.id),fullName,client.phone||"")', js)
+        self.assertNotIn('openAddModal(', js[js.index("async function saveNewClient"):])
+        self.assertIn(".add-client-btn", css)
+        self.assertIn('salon-board-shell-v10', worker)
+
     def test_resolve_services_keeps_requested_order(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
         tree = ast.parse(source)

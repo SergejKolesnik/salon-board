@@ -396,11 +396,13 @@ function ensureEventTypeUi(){
   const existingType=document.getElementById("fEventType");
   if(existingType){
     existingType.onchange=toggleEventType;
+    ensureClientCreatorUi(rowOf("fClient"));
     ensureServicePickerUi(rowOf("fService"));
     return;
   }
   const clientRow=rowOf("fClient");
   if(clientRow){
+    ensureClientCreatorUi(clientRow);
     const typeRow=document.createElement("div");
     typeRow.className="form-row";
     typeRow.id="eventTypeRow";
@@ -744,6 +746,87 @@ function ensureClientsDirectoryUi(){
       +'</div>';
     document.body.appendChild(cardOverlay);
     cardOverlay.addEventListener("click",function(e){if(e.target===this)closeClientCardModal();});
+  }
+  if(!document.getElementById("newClientOverlay")){
+    const createOverlay=document.createElement("div");
+    createOverlay.id="newClientOverlay";
+    createOverlay.className="overlay hidden new-client-overlay";
+    createOverlay.innerHTML=
+      '<div class="modal new-client-modal">'
+      +'<h2>Новий клієнт</h2>'
+      +'<div class="client-card-grid">'
+      +clientCardInput("new_first_name","Ім\'я","")
+      +clientCardInput("new_last_name","Прізвище","")
+      +clientCardInput("new_phone","Телефон","")
+      +clientCardInput("new_birthday","Дата народження","")
+      +'<label class="client-card-field client-card-notes"><span>Нотатки</span><textarea id="cc_new_notes" rows="3"></textarea></label>'
+      +'</div>'
+      +'<div class="modal-footer">'
+      +'<button class="btn" type="button" onclick="closeNewClientModal()">Скасувати</button>'
+      +'<button class="btn btn-primary" id="newClientSaveBtn" type="button" onclick="saveNewClient()">Додати клієнта</button>'
+      +'</div>'
+      +'</div>';
+    document.body.appendChild(createOverlay);
+    createOverlay.addEventListener("click",function(e){if(e.target===this)closeNewClientModal();});
+  }
+}
+
+function ensureClientCreatorUi(clientRow){
+  if(!clientRow||document.getElementById("addClientBtn"))return;
+  const button=document.createElement("button");
+  button.id="addClientBtn";
+  button.type="button";
+  button.className="add-client-btn";
+  button.textContent="+ Додати клієнта";
+  button.onclick=openNewClientModal;
+  clientRow.appendChild(button);
+}
+
+function openNewClientModal(){
+  ensureClientsDirectoryUi();
+  hideClientSuggestions();
+  const name=(document.getElementById("fClient")||{value:""}).value.trim().split(/\s+/,2);
+  const values={
+    cc_new_first_name:name[0]||"",
+    cc_new_last_name:name[1]||"",
+    cc_new_phone:(document.getElementById("fPhone")||{value:""}).value.trim(),
+    cc_new_birthday:"",
+    cc_new_notes:""
+  };
+  Object.keys(values).forEach(function(id){const el=document.getElementById(id);if(el)el.value=values[id];});
+  document.getElementById("newClientOverlay").classList.remove("hidden");
+  if(window.innerWidth>640){
+    setTimeout(function(){const first=document.getElementById("cc_new_first_name");if(first)first.focus();},50);
+  }
+}
+function closeNewClientModal(){
+  const overlay=document.getElementById("newClientOverlay");
+  if(overlay)overlay.classList.add("hidden");
+}
+async function saveNewClient(){
+  const payload={
+    first_name:(document.getElementById("cc_new_first_name")||{value:""}).value.trim(),
+    last_name:(document.getElementById("cc_new_last_name")||{value:""}).value.trim(),
+    phone:(document.getElementById("cc_new_phone")||{value:""}).value.trim(),
+    birthday:(document.getElementById("cc_new_birthday")||{value:""}).value.trim(),
+    notes:(document.getElementById("cc_new_notes")||{value:""}).value.trim()
+  };
+  if(!payload.first_name){alert("Вкажіть ім'я клієнта");return;}
+  const saveButton=document.getElementById("newClientSaveBtn");
+  if(saveButton){saveButton.disabled=true;saveButton.textContent="Збереження...";}
+  try{
+    const res=await fetch("/api/clients",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(!res.ok){const error=await res.json();alert(error.detail||"Не вдалося додати клієнта");return;}
+    const client=await res.json();
+    const fullName=((client.first_name||"")+" "+(client.last_name||"")).trim();
+    selectClient(Number(client.id),fullName,client.phone||"");
+    clientsDirectory.unshift({...client,visits_count:0,last_visit:""});
+    closeNewClientModal();
+    showToast("Клієнта додано до запису");
+  }catch(error){
+    alert("Не вдалося додати клієнта. Перевірте з'єднання та спробуйте ще раз.");
+  }finally{
+    if(saveButton){saveButton.disabled=false;saveButton.textContent="Додати клієнта";}
   }
 }
 async function openClientsModal(){
