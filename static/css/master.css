@@ -66,6 +66,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .add-client-btn:hover{background:rgba(0,200,180,.24)}
 .new-client-overlay{z-index:180}
 .new-client-modal{max-width:520px}
+.new-client-hint{margin:-6px 0 14px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--accent-light);color:var(--muted);font-size:12px;line-height:1.4}
 .form-row{margin-bottom:12px}
 .form-row label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;font-family:var(--font-head);text-transform:uppercase;letter-spacing:.3px}
 .form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--bg);color:var(--text);outline:none;transition:border-color .12s}
@@ -164,7 +165,7 @@ a[href="/login"] img{height:80px!important;width:auto!important;display:block!im
 
 /* CRM Stage 3: client autocomplete dropdown */
 #clientSuggestWrap{background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius-sm);box-shadow:var(--shadow);margin-top:-4px;overflow:hidden;max-height:220px;overflow-y:auto}
-.client-suggest-item{padding:9px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px;transition:background .1s;border-bottom:1px solid var(--border)}
+.client-suggest-item{width:100%;padding:9px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:2px;transition:background .1s;border:0;border-bottom:1px solid var(--border);background:var(--surface);text-align:left}
 .client-suggest-item:last-child{border-bottom:none}
 .client-suggest-item:hover{background:var(--accent-light)}
 .cs-name{font-size:13px;font-weight:600;font-family:var(--font-head);color:var(--text)}

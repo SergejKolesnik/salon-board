@@ -579,7 +579,7 @@ return fetch("/api/client/"+a.client_id+"/history")
 var dob=clientData.birthday?"<div class=\"detail-row\"><span class=\"dl\">\u0414\u0430\u0442\u0430 \u043d\u0430\u0440\u043e\u0434\u0436\u0435\u043d\u043d\u044f</span><span class=\"dv\">"+clientData.birthday+"</span></div>":"";
 var notes2=clientData.notes?"<div class=\"detail-row\"><span class=\"dl\">\u041d\u043e\u0442\u0430\u0442\u043a\u0438</span><span class=\"dv\">"+clientData.notes+"</span></div>":"";
 var fullName=(clientData.first_name||"")+" "+(clientData.last_name||"");fullName=fullName.trim()||a.client_name;
-var phone=clientData.phone||"\u2014";
+var phone=formatPhoneDisplay(clientData.phone||"")||"\u2014";
 var visits="<div class=\"crm-no-visits\">\u041f\u043e\u043f\u0435\u0440\u0435\u0434\u043d\u0456\u0445 \u0432\u0456\u0437\u0438\u0442\u0456\u0432 \u043d\u0435\u043c\u0430\u0454</div>";
 if(Array.isArray(historyData)&&historyData.length>0){
 visits=historyData.slice(0,5).map(function(v){return "<div class=\"crm-visit\">"+v.appt_date+" \u2014 "+v.service+" \u2014 "+v.duration_min+" \u0445\u0432</div>";}).join("");
@@ -792,6 +792,7 @@ function ensureClientsDirectoryUi(){
     createOverlay.innerHTML=
       '<div class="modal new-client-modal">'
       +'<h2>Новий клієнт</h2>'
+      +'<div class="new-client-hint">Телефон і дата народження бажані для повної картки, але клієнта можна зберегти й без них.</div>'
       +'<div class="client-card-grid">'
       +clientCardInput("new_first_name","Ім\'я","")
       +clientCardInput("new_last_name","Прізвище","")
@@ -850,6 +851,9 @@ async function saveNewClient(){
     notes:(document.getElementById("cc_new_notes")||{value:""}).value.trim()
   };
   if(!payload.first_name){alert("Вкажіть ім'я клієнта");return;}
+  const missingDetails=[];
+  if(!payload.phone)missingDetails.push("телефон");
+  if(!payload.birthday)missingDetails.push("дату народження");
   const saveButton=document.getElementById("newClientSaveBtn");
   if(saveButton){saveButton.disabled=true;saveButton.textContent="Збереження...";}
   try{
@@ -860,7 +864,7 @@ async function saveNewClient(){
     selectClient(Number(client.id),fullName,client.phone||"");
     clientsDirectory.unshift({...client,visits_count:0,last_visit:""});
     closeNewClientModal();
-    showToast("Клієнта додано до запису");
+    showToast(missingDetails.length?"Клієнта додано. Пізніше додайте "+missingDetails.join(" і "):"Клієнта додано до запису");
   }catch(error){
     alert("Не вдалося додати клієнта. Перевірте з'єднання та спробуйте ще раз.");
   }finally{
@@ -907,7 +911,7 @@ function renderClientsTable(){
     '<tr onclick="openClientCardModal('+c.id+')">'
     +'<td>'+escapeHtml(c.last_name||"")+'</td>'
     +'<td>'+escapeHtml(c.first_name||"")+'</td>'
-    +'<td>'+escapeHtml(c.phone||"")+'</td>'
+    +'<td>'+escapeHtml(formatPhoneDisplay(c.phone||""))+'</td>'
     +'<td>'+Number(c.visits_count||0)+'</td>'
     +'<td>'+escapeHtml(c.last_visit||"—")+'</td>'
     +'</tr>'
@@ -957,7 +961,7 @@ function renderClientCard(editing){
         '<div class="client-card-grid">'
         +clientCardInput("first_name","Ім'я",c.first_name||"")
         +clientCardInput("last_name","Прізвище",c.last_name||"")
-        +clientCardInput("phone","Телефон",c.phone||"")
+        +clientCardInput("phone","Телефон",formatPhoneDisplay(c.phone||""))
         +clientCardInput("birthday","Дата народження",c.birthday||"")
         +'<label class="client-card-field client-card-notes"><span>Нотатки</span><textarea id="cc_notes" rows="4">'+escapeHtml(c.notes||"")+'</textarea></label>'
         +'</div>';
@@ -965,7 +969,7 @@ function renderClientCard(editing){
       body.innerHTML=
         '<div class="detail-row"><span class="dl">Ім&#39;я</span><span class="dv">'+escapeHtml(c.first_name||"")+'</span></div>'
         +'<div class="detail-row"><span class="dl">Прізвище</span><span class="dv">'+escapeHtml(c.last_name||"")+'</span></div>'
-        +'<div class="detail-row"><span class="dl">Телефон</span><span class="dv">'+escapeHtml(c.phone||"")+'</span></div>'
+        +'<div class="detail-row"><span class="dl">Телефон</span><span class="dv">'+escapeHtml(formatPhoneDisplay(c.phone||""))+'</span></div>'
         +'<div class="detail-row"><span class="dl">Дата народження</span><span class="dv">'+escapeHtml(c.birthday||"Не вказано")+'</span></div>'
         +'<div class="detail-row"><span class="dl">Нотатки</span><span class="dv">'+escapeHtml(c.notes||"")+'</span></div>';
     }
@@ -982,7 +986,8 @@ function renderClientCard(editing){
   }
 }
 function clientCardInput(id,label,value){
-  return '<label class="client-card-field"><span>'+label+'</span><input id="cc_'+id+'" value="'+escapeHtml(value)+'"></label>';
+  const phoneAttrs=id.endsWith("phone")?' inputmode="tel" oninput="fmtPhone(this)"':'';
+  return '<label class="client-card-field"><span>'+label+'</span><input id="cc_'+id+'" value="'+escapeHtml(value)+'"'+phoneAttrs+'></label>';
 }
 function editClientCard(){renderClientCard(true);}
 async function saveClientCard(){
@@ -1055,14 +1060,22 @@ function showClientSuggestions(list){
   var wrap=document.getElementById("clientSuggestWrap");
   if(!wrap)return;
   if(!list||list.length===0){hideClientSuggestions();return;}
-  wrap.innerHTML=list.map(function(c){
+  wrap.innerHTML=list.map(function(c,index){
     var fullName=((c.first_name||"")+" "+(c.last_name||"")).trim();
-    var phone=c.phone||"";
-    return '<div class="client-suggest-item" onclick="selectClient('+c.id+','+JSON.stringify(fullName)+','+JSON.stringify(phone)+')">'
-      +'<span class="cs-name">'+fullName+'</span>'
-      +(phone?'<span class="cs-phone">'+phone+'</span>':'')
-      +'</div>';
+    var phone=formatPhoneDisplay(c.phone||"");
+    return '<button type="button" class="client-suggest-item" data-client-index="'+index+'">'
+      +'<span class="cs-name">'+escapeHtml(fullName)+'</span>'
+      +(phone?'<span class="cs-phone">'+escapeHtml(phone)+'</span>':'')
+      +'</button>';
   }).join("");
+  wrap.querySelectorAll(".client-suggest-item").forEach(function(item){
+    item.addEventListener("click",function(){
+      const client=list[Number(item.dataset.clientIndex)];
+      if(!client)return;
+      const fullName=((client.first_name||"")+" "+(client.last_name||"")).trim();
+      selectClient(Number(client.id),fullName,client.phone||"");
+    });
+  });
   wrap.style.display="block";
 }
 function hideClientSuggestions(){
@@ -1075,7 +1088,7 @@ function selectClient(id,name,phone){
   var fc=document.getElementById("fClient");
   if(fc)fc.value=name;
   var fp=document.getElementById("fPhone");
-  if(fp&&phone)fp.value=phone;
+  if(fp)fp.value=formatPhoneDisplay(phone);
   hideClientSuggestions();
 }
 document.addEventListener("click",function(e){
@@ -1096,16 +1109,23 @@ function setDur(min){
   });
 }
 function fmtPhone(el){
-  var raw=el.value.replace(/\D/g,"");
+  el.value=formatPhoneDisplay(el.value);
+}
+function formatPhoneDisplay(value){
+  var original=String(value||"").trim();
+  var raw=original.replace(/\D/g,"");
+  if(original.startsWith("+")&&!raw.startsWith("38"))return original;
   if(raw.startsWith("380")) raw=raw.slice(2);
   else if(raw.startsWith("38")) raw=raw.slice(2);
+  else if(raw.startsWith("80")&&raw.length>=11) raw=raw.slice(1);
+  else if(raw.length===9) raw="0"+raw;
   raw=raw.slice(0,10);
   var res="";
   if(raw.length>0) res="+38 ("+raw.slice(0,3);
   if(raw.length>3) res+=") "+raw.slice(3,6);
   if(raw.length>6) res+="-"+raw.slice(6,8);
   if(raw.length>8) res+="-"+raw.slice(8,10);
-  el.value=res;
+  return res;
 }
 
 // Multi-service appointment picker and catalog management for masters.
@@ -1132,7 +1152,7 @@ function renderServicePicker(){
   const selected=new Set(selectedServiceIds.map(Number));
   const select=document.getElementById("servicePickerSelect");
   if(select){
-    const available=services.filter(function(s){return !selected.has(Number(s.id));});
+    const available=services.filter(function(s){return !selected.has(Number(s.id));}).sort(function(a,b){return a.name.localeCompare(b.name,"uk",{sensitivity:"base"});});
     select.innerHTML='<option value="">Оберіть процедуру...</option>'+available.map(function(s){return '<option value="'+s.id+'">'+escapeHtml(s.name)+'</option>';}).join("");
   }
   const chips=document.getElementById("serviceChips");
@@ -1190,7 +1210,8 @@ async function refreshMasterServices(){
   updateDatalist();
   const list=document.getElementById("serviceManagerList");
   if(!list)return;
-  list.innerHTML=services.length?services.map(function(s){return '<div class="service-manager-row"><span>'+escapeHtml(s.name)+'</span><button type="button" onclick="renameMasterService('+s.id+')">✎</button><button type="button" onclick="deleteMasterService('+s.id+')">×</button></div>';}).join(""): '<div style="padding:12px;color:var(--hint)">Послуг ще немає</div>';
+  const sortedServices=services.slice().sort(function(a,b){return a.name.localeCompare(b.name,"uk",{sensitivity:"base"});});
+  list.innerHTML=sortedServices.length?sortedServices.map(function(s){return '<div class="service-manager-row"><span>'+escapeHtml(s.name)+'</span><button type="button" onclick="renameMasterService('+s.id+')">✎</button><button type="button" onclick="deleteMasterService('+s.id+')">×</button></div>';}).join(""): '<div style="padding:12px;color:var(--hint)">Послуг ще немає</div>';
 }
 async function createMasterService(){
   const input=document.getElementById("newMasterServiceName");
