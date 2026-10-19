@@ -883,6 +883,16 @@ async function pickAppointmentContact(){
   const contact=await requestPhoneContact();
   if(!contact)return;
   const values=contactValues(contact);
+  const clientInput=document.getElementById("fClient");
+  const phoneInput=document.getElementById("fPhone");
+  if(clientInput&&values.fullName)clientInput.value=values.fullName;
+  if(phoneInput){phoneInput.value=values.phone;fmtPhone(phoneInput);}
+  hideClientSuggestions();
+  if(!values.phone){
+    selectedClientId=null;
+    alert("Контакт не передав номер телефону. Оберіть номер у телефонній книзі або введіть його вручну.");
+    return;
+  }
   const existing=values.phone?await findClientByExactPhone(values.phone):null;
   if(existing){
     const existingName=((existing.first_name||"")+" "+(existing.last_name||"")).trim();
@@ -890,13 +900,37 @@ async function pickAppointmentContact(){
     showToast("Клієнта знайдено в базі та додано до запису");
     return;
   }
-  selectedClientId=null;
-  const clientInput=document.getElementById("fClient");
-  const phoneInput=document.getElementById("fPhone");
-  if(clientInput&&values.fullName)clientInput.value=values.fullName;
-  if(phoneInput){phoneInput.value=values.phone;fmtPhone(phoneInput);}
-  hideClientSuggestions();
-  showToast("Контакт підставлено в запис. Перевірте дані");
+  if(!values.firstName){
+    selectedClientId=null;
+    alert("У контакті немає імені. Вкажіть ім'я, щоб додати клієнта до бази.");
+    return;
+  }
+  const button=document.getElementById("appointmentContactBtn");
+  if(button)button.disabled=true;
+  try{
+    const payload={first_name:values.firstName,last_name:values.lastName,phone:values.phone,birthday:"",notes:""};
+    const response=await fetch("/api/clients",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(response.status===409&&values.phone){
+      const duplicate=await findClientByExactPhone(values.phone);
+      if(duplicate){
+        const duplicateName=((duplicate.first_name||"")+" "+(duplicate.last_name||"")).trim();
+        selectClient(Number(duplicate.id),duplicateName,duplicate.phone||values.phone);
+        showToast("Клієнта знайдено в базі та додано до запису");
+        return;
+      }
+    }
+    if(!response.ok)throw new Error("client_create_failed");
+    const client=await response.json();
+    const fullName=((client.first_name||"")+" "+(client.last_name||"")).trim();
+    selectClient(Number(client.id),fullName,client.phone||values.phone);
+    clientsDirectory.unshift({...client,visits_count:0,last_visit:""});
+    showToast("Клієнта додано до бази й поточного запису. Дату народження можна додати пізніше");
+  }catch(error){
+    selectedClientId=null;
+    alert("Контакт підставлено, але не вдалося додати клієнта до бази. Спробуйте ще раз.");
+  }finally{
+    if(button)button.disabled=false;
+  }
 }
 
 function ensureClientCreatorUi(clientRow){

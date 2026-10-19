@@ -35,7 +35,7 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('selectClient(Number(client.id),fullName,client.phone||"")', js)
         self.assertNotIn('openAddModal(', js[js.index("async function saveNewClient"):])
         self.assertIn(".add-client-btn", css)
-        self.assertIn('salon-board-shell-v15', worker)
+        self.assertIn('salon-board-shell-v16', worker)
 
     def test_mobile_appointment_actions_client_picker_and_calendar_cues(self):
         js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
@@ -77,6 +77,10 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('id="appointmentContactBtn"', js)
         self.assertIn("pickAppointmentContact", js)
         self.assertIn("Клієнта знайдено в базі та додано до запису", js)
+        appointment_picker = js[js.index("async function pickAppointmentContact"):js.index("function ensureClientCreatorUi")]
+        self.assertIn('fetch("/api/clients",{method:"POST"', appointment_picker)
+        self.assertIn("Клієнта додано до бази й поточного запису", appointment_picker)
+        self.assertIn("selectClient(Number(client.id)", appointment_picker)
         self.assertIn(".contact-picker-btn", css)
         self.assertIn(".client-entry-actions", css)
         self.assertIn("WHERE c.deleted_at IS NULL", source)
