@@ -1,6 +1,6 @@
 // Bump this when the shell JavaScript/CSS changes so installed PWAs fetch the
 // current UI instead of retaining an older cached bundle.
-const CACHE_NAME = "salon-board-shell-v14";
+const CACHE_NAME = "salon-board-shell-v15";
 const SHELL_URLS = [
   "/manifest.json",
   "/api/icon",

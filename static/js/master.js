@@ -817,11 +817,11 @@ function contactPickerSupported(){
   return window.isSecureContext&&"contacts" in navigator&&typeof navigator.contacts.select==="function";
 }
 async function prepareContactPicker(){
-  const button=document.getElementById("contactPickerBtn");
-  if(!button)return;
+  const buttons=Array.from(document.querySelectorAll("#contactPickerBtn,#appointmentContactBtn"));
+  if(!buttons.length)return;
   contactPickerProperties=["name","tel"];
   if(!contactPickerSupported()){
-    button.title="Для вибору контактів відкрийте Body Balance у Google Chrome на Android";
+    buttons.forEach(function(button){button.title="Для вибору контактів відкрийте Body Balance у Google Chrome на Android";});
     return;
   }
   try{
@@ -829,7 +829,8 @@ async function prepareContactPicker(){
       ?await navigator.contacts.getProperties()
       :["name","tel"];
     contactPickerProperties=["name","tel"].filter(function(property){return supported.includes(property);});
-    button.title=contactPickerProperties.includes("tel")?"Вибрати ім'я та номер із телефонної книги":"Браузер не дозволяє передати номер контакту";
+    const title=contactPickerProperties.includes("tel")?"Вибрати ім'я та номер із телефонної книги":"Браузер не дозволяє передати номер контакту";
+    buttons.forEach(function(button){button.title=title;});
   }catch(error){
     // Some Android browsers expose select() but fail getProperties().
     // Keep the common name/tel request available and let the native picker decide.
@@ -839,42 +840,85 @@ async function prepareContactPicker(){
 function firstContactValue(value){
   return Array.isArray(value)?String(value[0]||"").trim():String(value||"").trim();
 }
-async function pickPhoneContact(){
+async function requestPhoneContact(){
   if(!contactPickerSupported()){
     alert("Телефонна книга недоступна в цьому браузері. Відкрийте сайт salon-board.onrender.com у Google Chrome на Android.");
-    return;
+    return null;
   }
   if(!contactPickerProperties.includes("tel")){
     alert("Цей браузер не дозволяє передати номер із телефонної книги.");
-    return;
+    return null;
   }
   try{
     const contacts=await navigator.contacts.select(contactPickerProperties,{multiple:false});
-    const contact=contacts&&contacts[0];
-    if(!contact)return;
-    const fullName=firstContactValue(contact.name);
-    const nameParts=fullName.split(/\s+/).filter(Boolean);
-    const firstName=document.getElementById("cc_new_first_name");
-    const lastName=document.getElementById("cc_new_last_name");
-    const phone=document.getElementById("cc_new_phone");
-    if(firstName&&fullName)firstName.value=nameParts.shift()||"";
-    if(lastName&&fullName)lastName.value=nameParts.join(" ");
-    if(phone){phone.value=firstContactValue(contact.tel);fmtPhone(phone);}
-    showToast("Контакт підставлено. Перевірте дані перед збереженням");
+    return contacts&&contacts[0]||null;
   }catch(error){
     if(error&&error.name!=="AbortError")alert("Не вдалося відкрити контакти телефону");
+    return null;
   }
+}
+function contactValues(contact){
+  const fullName=firstContactValue(contact&&contact.name);
+  const nameParts=fullName.split(/\s+/).filter(Boolean);
+  return {
+    fullName,
+    firstName:nameParts.shift()||"",
+    lastName:nameParts.join(" "),
+    phone:firstContactValue(contact&&contact.tel)
+  };
+}
+async function pickPhoneContact(){
+  const contact=await requestPhoneContact();
+  if(!contact)return;
+  const values=contactValues(contact);
+  const firstName=document.getElementById("cc_new_first_name");
+  const lastName=document.getElementById("cc_new_last_name");
+  const phone=document.getElementById("cc_new_phone");
+  if(firstName&&values.fullName)firstName.value=values.firstName;
+  if(lastName&&values.fullName)lastName.value=values.lastName;
+  if(phone){phone.value=values.phone;fmtPhone(phone);}
+  showToast("Контакт підставлено. Перевірте дані перед збереженням");
+}
+async function pickAppointmentContact(){
+  const contact=await requestPhoneContact();
+  if(!contact)return;
+  const values=contactValues(contact);
+  const existing=values.phone?await findClientByExactPhone(values.phone):null;
+  if(existing){
+    const existingName=((existing.first_name||"")+" "+(existing.last_name||"")).trim();
+    selectClient(Number(existing.id),existingName,existing.phone||values.phone);
+    showToast("Клієнта знайдено в базі та додано до запису");
+    return;
+  }
+  selectedClientId=null;
+  const clientInput=document.getElementById("fClient");
+  const phoneInput=document.getElementById("fPhone");
+  if(clientInput&&values.fullName)clientInput.value=values.fullName;
+  if(phoneInput){phoneInput.value=values.phone;fmtPhone(phoneInput);}
+  hideClientSuggestions();
+  showToast("Контакт підставлено в запис. Перевірте дані");
 }
 
 function ensureClientCreatorUi(clientRow){
   if(!clientRow||document.getElementById("addClientBtn"))return;
+  const actions=document.createElement("div");
+  actions.className="client-entry-actions";
   const button=document.createElement("button");
   button.id="addClientBtn";
   button.type="button";
   button.className="add-client-btn";
   button.textContent="+ Додати клієнта";
   button.onclick=openNewClientModal;
-  clientRow.appendChild(button);
+  const contactButton=document.createElement("button");
+  contactButton.id="appointmentContactBtn";
+  contactButton.type="button";
+  contactButton.className="add-client-btn appointment-contact-btn";
+  contactButton.textContent="📇 З контактів";
+  contactButton.onclick=pickAppointmentContact;
+  actions.appendChild(button);
+  actions.appendChild(contactButton);
+  clientRow.appendChild(actions);
+  prepareContactPicker();
 }
 
 function openNewClientModal(){

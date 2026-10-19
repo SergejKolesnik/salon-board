@@ -62,8 +62,10 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .client-history-table{width:100%;border-collapse:collapse;font-size:13px}
 .client-history-table th{position:sticky;top:0;background:var(--surface2);color:var(--muted);font-family:var(--font-head);font-size:11px;text-align:left;text-transform:uppercase;letter-spacing:.3px}
 .client-history-table th,.client-history-table td{padding:8px 10px;border-bottom:1px solid var(--border)}
-.add-client-btn{width:100%;margin-top:7px;padding:9px 12px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-light);color:var(--accent);font-family:var(--font-head);font-size:13px;font-weight:700;cursor:pointer}
+.client-entry-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px}
+.add-client-btn{width:100%;margin:0;padding:9px 8px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-light);color:var(--accent);font-family:var(--font-head);font-size:12px;font-weight:700;cursor:pointer}
 .add-client-btn:hover{background:rgba(0,200,180,.24)}
+.appointment-contact-btn{background:var(--surface)}
 .new-client-overlay{z-index:180}
 .new-client-modal{max-width:520px}
 .new-client-hint{margin:-6px 0 14px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--accent-light);color:var(--muted);font-size:12px;line-height:1.4}
