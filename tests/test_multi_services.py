@@ -35,7 +35,20 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('selectClient(Number(client.id),fullName,client.phone||"")', js)
         self.assertNotIn('openAddModal(', js[js.index("async function saveNewClient"):])
         self.assertIn(".add-client-btn", css)
-        self.assertIn('salon-board-shell-v10', worker)
+        self.assertIn('salon-board-shell-v11', worker)
+
+    def test_mobile_appointment_actions_client_picker_and_calendar_cues(self):
+        js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
+        css = (ROOT / "static/css/master.css").read_text(encoding="utf-8")
+
+        self.assertIn('[onclick*="closeModal"]', js)
+        self.assertIn('safeOn("fClient","focus",showRecentClients)', js)
+        self.assertIn('fetch("/api/clients")', js)
+        self.assertIn("appointmentCountLabel", js)
+        self.assertIn("autoPositionVisibleMobileDay", js)
+        self.assertIn("mobileDaysAutoPositioned", js)
+        self.assertIn(".cal-day-count", css)
+        self.assertIn("grid-template-columns:minmax(0,1fr) minmax(0,1fr)", css)
 
     def test_resolve_services_keeps_requested_order(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")

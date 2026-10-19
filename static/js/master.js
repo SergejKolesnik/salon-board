@@ -9,11 +9,14 @@ let editingId=null,editingBreakId=null,mobileDay=new Date();
 let selectedClientId=null;
 let shouldSmartScrollDesktop=true;
 let clientsDirectory=[];
+let clientsDirectoryLoaded=false;
 let currentClientCard=null;
 let currentClientHistory=[];
 let didInitialMobileFastLoad=false;
 let pendingMobileScrollIso=isoDate(new Date());
 let scheduleStatusTimer=null;
+let mobileScrollTimer=null;
+const mobileDaysAutoPositioned=new Set();
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
   confirmed:"\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e",
@@ -174,7 +177,7 @@ function renderAll(){
   if(pendingMobileScrollIso){
     const iso=pendingMobileScrollIso;
     pendingMobileScrollIso=null;
-    setTimeout(()=>scrollMobileToRelevantTime(iso),80);
+    setTimeout(()=>scrollMobileToRelevantTime(iso,true),80);
   }
 }
 
@@ -322,11 +325,17 @@ function renderScrollCalendar(){
       }
       return `<div class="cal-slot" onclick="openAddOnSlot('${iso}','${hr}')"><div class="cal-slot-time">${hr}</div><div class="cal-slot-content">${inner}</div></div>`;
     }).join("");
+    const countBadge=da.length?`<div class="cal-day-count">${appointmentCountLabel(da.length)}</div>`:"";
     return `<div class="cal-day-col${isToday?" today":""}" data-date="${iso}">
-      <div class="cal-day-header"><div class="cal-day-name">${DAYS[d.getDay()]}</div><div class="cal-day-num">${d.getDate()}</div></div>
+      <div class="cal-day-header"><div class="cal-day-name">${DAYS[d.getDay()]}</div><div class="cal-day-num">${d.getDate()}</div>${countBadge}</div>
       <div class="cal-slots">${slots}</div>
     </div>`;
   }).join("");
+
+  cal.onscroll=function(){
+    clearTimeout(mobileScrollTimer);
+    mobileScrollTimer=setTimeout(()=>autoPositionVisibleMobileDay(),140);
+  };
 
   // Add FAB
   const fab=document.createElement("button");
@@ -345,8 +354,26 @@ function renderScrollCalendar(){
     },50);
   }
 }
-function scrollMobileToRelevantTime(targetIso){
+function appointmentCountLabel(count){
+  const mod10=count%10,mod100=count%100;
+  const word=mod10===1&&mod100!==11?"запис":(mod10>=2&&mod10<=4&&(mod100<12||mod100>14)?"записи":"записів");
+  return `${count} ${word}`;
+}
+function autoPositionVisibleMobileDay(){
   if(window.innerWidth>768)return;
+  const cal=document.getElementById("scrollCal");
+  if(!cal)return;
+  const calRect=cal.getBoundingClientRect();
+  let closest=null,closestDistance=Infinity;
+  cal.querySelectorAll(".cal-day-col[data-date]").forEach(function(col){
+    const distance=Math.abs(col.getBoundingClientRect().left-calRect.left);
+    if(distance<closestDistance){closest=col;closestDistance=distance;}
+  });
+  if(closest)scrollMobileToRelevantTime(closest.dataset.date,false);
+}
+function scrollMobileToRelevantTime(targetIso,force){
+  if(window.innerWidth>768)return;
+  if(!force&&mobileDaysAutoPositioned.has(targetIso))return;
   const cal=document.getElementById("scrollCal");
   if(!cal||!targetIso)return;
   const col=cal.querySelector(`.cal-day-col[data-date="${targetIso}"]`);
@@ -356,15 +383,23 @@ function scrollMobileToRelevantTime(targetIso){
   if(!calSlots)return;
   const dayAppointments=appointments.filter(a=>a.appt_date===targetIso);
   const dayBreaks=breaks.filter(b=>b.break_date===targetIso);
-  let targetMin=12*60;
+  const todayIso=isoDate(new Date());
+  const now=new Date();
+  const nowMin=now.getHours()*60+now.getMinutes();
+  let targetMin=targetIso===todayIso?Math.max(9*60,nowMin-60):9*60;
   const starts=[];
   dayAppointments.forEach(a=>starts.push(toMin(a.start_time)));
   dayBreaks.forEach(b=>starts.push(toMin(b.start_time)));
-  if(starts.length)targetMin=Math.max(9*60,Math.min(...starts)-60);
+  if(starts.length){
+    const relevant=targetIso===todayIso?starts.filter(value=>value>=nowMin):starts;
+    const selectedStart=Math.min(...(relevant.length?relevant:starts));
+    targetMin=Math.max(9*60,selectedStart-60);
+  }
   const slotHeight=52;
   const startMin=9*60;
   const slotIndex=Math.max(0,Math.floor((targetMin-startMin)/30));
   calSlots.scrollTop=slotIndex*slotHeight;
+  mobileDaysAutoPositioned.add(targetIso);
 }
 function changeWeek(d){shouldSmartScrollDesktop=true;weekStart=addDays(weekStart,d*7);periodStart=new Date(weekStart);mobileDay=new Date(periodStart);pendingMobileScrollIso=isoDate(periodStart);loadWeek();}
 function goToday(){
@@ -456,7 +491,7 @@ function ensureAppointmentModalActions(){
     save.dataset.role="save-appointment";
     save.textContent="Зберегти";
   }
-  let cancel=footer.querySelector('[data-role="cancel-appointment"]');
+  let cancel=footer.querySelector('[data-role="cancel-appointment"], [onclick*="closeModal"]');
   if(!cancel){
     cancel=document.createElement("button");
     cancel.type="button";
@@ -465,6 +500,9 @@ function ensureAppointmentModalActions(){
     cancel.textContent="Скасувати";
     cancel.onclick=closeModal;
     footer.insertBefore(cancel,save);
+  }else{
+    cancel.dataset.role="cancel-appointment";
+    cancel.textContent="Скасувати";
   }
 }
 function openAddModal(date,time){
@@ -839,8 +877,10 @@ async function openClientsModal(){
   if(body)body.innerHTML='<tr><td colspan="5" class="clients-empty">Завантаження...</td></tr>';
   try{
     clientsDirectory=await fetch("/api/clients").then(r=>r.json());
+    clientsDirectoryLoaded=true;
   }catch(e){
     clientsDirectory=[];
+    clientsDirectoryLoaded=false;
     if(body)body.innerHTML='<tr><td colspan="5" class="clients-empty">Не вдалося завантажити клієнтів</td></tr>';
     return;
   }
@@ -975,6 +1015,7 @@ if("serviceWorker" in navigator){
 loadWeek();
 // ─── CRM Stage 3: client autocomplete ─────────────────────────────────────
 let _clientSearchTimer=null;
+let _clientRequestSequence=0;
 function onClientInput(){
   selectedClientId=null;
   const q=document.getElementById("fClient").value.trim();
@@ -990,10 +1031,25 @@ function onPhoneInput(){
   _clientSearchTimer=setTimeout(function(){searchClients(q);},250);
 }
 function searchClients(q){
+  const requestSequence=++_clientRequestSequence;
   fetch("/api/clients/search?q="+encodeURIComponent(q))
   .then(function(r){return r.json();})
-  .then(function(list){showClientSuggestions(list);})
-  .catch(function(){hideClientSuggestions();});
+  .then(function(list){if(requestSequence===_clientRequestSequence)showClientSuggestions(list);})
+  .catch(function(){if(requestSequence===_clientRequestSequence)hideClientSuggestions();});
+}
+function showRecentClients(){
+  const input=document.getElementById("fClient");
+  const q=input?input.value.trim():"";
+  if(q.length>=2){searchClients(q);return;}
+  const requestSequence=++_clientRequestSequence;
+  const useCached=clientsDirectoryLoaded;
+  const request=useCached?Promise.resolve(clientsDirectory):fetch("/api/clients").then(function(r){return r.json();});
+  request.then(function(list){
+    if(requestSequence!==_clientRequestSequence)return;
+    clientsDirectory=Array.isArray(list)?list:[];
+    clientsDirectoryLoaded=true;
+    showClientSuggestions(clientsDirectory.slice(0,15));
+  }).catch(function(){if(requestSequence===_clientRequestSequence)hideClientSuggestions();});
 }
 function showClientSuggestions(list){
   var wrap=document.getElementById("clientSuggestWrap");
@@ -1014,6 +1070,7 @@ function hideClientSuggestions(){
   if(wrap)wrap.style.display="none";
 }
 function selectClient(id,name,phone){
+  _clientRequestSequence++;
   selectedClientId=id;
   var fc=document.getElementById("fClient");
   if(fc)fc.value=name;
@@ -1028,6 +1085,7 @@ document.addEventListener("click",function(e){
   }
 });
 safeOn("fClient","input",onClientInput);
+safeOn("fClient","focus",showRecentClients);
 safeOn("fPhone","input",onPhoneInput);
 // ──────────────────────────────────────────────────────────────────────────────
 
