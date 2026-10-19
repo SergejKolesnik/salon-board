@@ -794,7 +794,7 @@ function ensureClientsDirectoryUi(){
       '<div class="modal new-client-modal">'
       +'<h2>Новий клієнт</h2>'
       +'<div class="new-client-hint">Телефон і дата народження бажані для повної картки, але клієнта можна зберегти й без них.</div>'
-      +'<button class="contact-picker-btn hidden" id="contactPickerBtn" type="button" onclick="pickPhoneContact()">📇 Обрати з контактів телефону</button>'
+      +'<button class="contact-picker-btn" id="contactPickerBtn" type="button" onclick="pickPhoneContact()">📇 Обрати з контактів телефону</button>'
       +'<div class="client-card-grid">'
       +clientCardInput("new_first_name","Ім\'я","")
       +clientCardInput("new_last_name","Прізвище","")
@@ -818,22 +818,36 @@ function contactPickerSupported(){
 }
 async function prepareContactPicker(){
   const button=document.getElementById("contactPickerBtn");
-  if(!button||!contactPickerSupported())return;
+  if(!button)return;
+  contactPickerProperties=["name","tel"];
+  if(!contactPickerSupported()){
+    button.title="Для вибору контактів відкрийте Body Balance у Google Chrome на Android";
+    return;
+  }
   try{
     const supported=typeof navigator.contacts.getProperties==="function"
       ?await navigator.contacts.getProperties()
       :["name","tel"];
     contactPickerProperties=["name","tel"].filter(function(property){return supported.includes(property);});
-    button.classList.toggle("hidden",!contactPickerProperties.includes("tel"));
+    button.title=contactPickerProperties.includes("tel")?"Вибрати ім'я та номер із телефонної книги":"Браузер не дозволяє передати номер контакту";
   }catch(error){
-    button.classList.add("hidden");
+    // Some Android browsers expose select() but fail getProperties().
+    // Keep the common name/tel request available and let the native picker decide.
+    contactPickerProperties=["name","tel"];
   }
 }
 function firstContactValue(value){
   return Array.isArray(value)?String(value[0]||"").trim():String(value||"").trim();
 }
 async function pickPhoneContact(){
-  if(!contactPickerSupported()||!contactPickerProperties.includes("tel"))return;
+  if(!contactPickerSupported()){
+    alert("Телефонна книга недоступна в цьому браузері. Відкрийте сайт salon-board.onrender.com у Google Chrome на Android.");
+    return;
+  }
+  if(!contactPickerProperties.includes("tel")){
+    alert("Цей браузер не дозволяє передати номер із телефонної книги.");
+    return;
+  }
   try{
     const contacts=await navigator.contacts.select(contactPickerProperties,{multiple:false});
     const contact=contacts&&contacts[0];

@@ -35,7 +35,7 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('selectClient(Number(client.id),fullName,client.phone||"")', js)
         self.assertNotIn('openAddModal(', js[js.index("async function saveNewClient"):])
         self.assertIn(".add-client-btn", css)
-        self.assertIn('salon-board-shell-v13', worker)
+        self.assertIn('salon-board-shell-v14', worker)
 
     def test_mobile_appointment_actions_client_picker_and_calendar_cues(self):
         js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
@@ -70,6 +70,8 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('navigator.contacts.select(contactPickerProperties,{multiple:false})', js)
         self.assertIn('window.isSecureContext&&"contacts" in navigator', js)
         self.assertIn('id="contactPickerBtn"', js)
+        self.assertNotIn('class="contact-picker-btn hidden"', js)
+        self.assertIn("Відкрийте сайт salon-board.onrender.com у Google Chrome", js)
         self.assertIn("findClientByExactPhone", js)
         self.assertIn('res.status===409&&payload.phone', js)
         self.assertIn(".contact-picker-btn", css)
