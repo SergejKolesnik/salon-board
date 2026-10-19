@@ -67,6 +67,8 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .new-client-overlay{z-index:180}
 .new-client-modal{max-width:520px}
 .new-client-hint{margin:-6px 0 14px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--accent-light);color:var(--muted);font-size:12px;line-height:1.4}
+.contact-picker-btn{width:100%;margin:0 0 14px;padding:10px 12px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--surface);color:var(--accent);font-family:var(--font-head);font-size:13px;font-weight:700;cursor:pointer}
+.contact-picker-btn:hover{background:var(--accent-light)}
 .form-row{margin-bottom:12px}
 .form-row label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;font-family:var(--font-head);text-transform:uppercase;letter-spacing:.3px}
 .form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;background:var(--bg);color:var(--text);outline:none;transition:border-color .12s}

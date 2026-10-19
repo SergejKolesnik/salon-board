@@ -1016,6 +1016,7 @@ def list_clients(token: str = Cookie(default=None)):
                MAX(a.appt_date) as last_visit
         FROM clients c
         LEFT JOIN appointments a ON a.client_id = c.id
+        WHERE c.deleted_at IS NULL
         GROUP BY c.id, c.first_name, c.last_name, c.phone
         ORDER BY last_visit DESC
     """)
@@ -1040,8 +1041,9 @@ def search_clients(q: str = "", token: str = Cookie(default=None)):
     phone_like = f"%{phone_digits}%" if len(phone_digits) >= 2 else "__no_phone_match__"
     rows = turso(
         """SELECT * FROM clients
-           WHERE first_name LIKE ? OR last_name LIKE ? OR phone LIKE ?
-              OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone,'+',''),'(',''),')',''),'-',''),' ','') LIKE ?
+           WHERE deleted_at IS NULL AND (
+              first_name LIKE ? OR last_name LIKE ? OR phone LIKE ?
+              OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone,'+',''),'(',''),')',''),'-',''),' ','') LIKE ?)
            ORDER BY updated_at DESC, id DESC LIMIT 10""",
         [like, like, like, phone_like]
     )

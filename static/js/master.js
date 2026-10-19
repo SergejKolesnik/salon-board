@@ -10,6 +10,7 @@ let selectedClientId=null;
 let shouldSmartScrollDesktop=true;
 let clientsDirectory=[];
 let clientsDirectoryLoaded=false;
+let contactPickerProperties=[];
 let currentClientCard=null;
 let currentClientHistory=[];
 let didInitialMobileFastLoad=false;
@@ -793,6 +794,7 @@ function ensureClientsDirectoryUi(){
       '<div class="modal new-client-modal">'
       +'<h2>Новий клієнт</h2>'
       +'<div class="new-client-hint">Телефон і дата народження бажані для повної картки, але клієнта можна зберегти й без них.</div>'
+      +'<button class="contact-picker-btn hidden" id="contactPickerBtn" type="button" onclick="pickPhoneContact()">📇 Обрати з контактів телефону</button>'
       +'<div class="client-card-grid">'
       +clientCardInput("new_first_name","Ім\'я","")
       +clientCardInput("new_last_name","Прізвище","")
@@ -807,6 +809,46 @@ function ensureClientsDirectoryUi(){
       +'</div>';
     document.body.appendChild(createOverlay);
     createOverlay.addEventListener("click",function(e){if(e.target===this)closeNewClientModal();});
+    prepareContactPicker();
+  }
+}
+
+function contactPickerSupported(){
+  return window.isSecureContext&&"contacts" in navigator&&typeof navigator.contacts.select==="function";
+}
+async function prepareContactPicker(){
+  const button=document.getElementById("contactPickerBtn");
+  if(!button||!contactPickerSupported())return;
+  try{
+    const supported=typeof navigator.contacts.getProperties==="function"
+      ?await navigator.contacts.getProperties()
+      :["name","tel"];
+    contactPickerProperties=["name","tel"].filter(function(property){return supported.includes(property);});
+    button.classList.toggle("hidden",!contactPickerProperties.includes("tel"));
+  }catch(error){
+    button.classList.add("hidden");
+  }
+}
+function firstContactValue(value){
+  return Array.isArray(value)?String(value[0]||"").trim():String(value||"").trim();
+}
+async function pickPhoneContact(){
+  if(!contactPickerSupported()||!contactPickerProperties.includes("tel"))return;
+  try{
+    const contacts=await navigator.contacts.select(contactPickerProperties,{multiple:false});
+    const contact=contacts&&contacts[0];
+    if(!contact)return;
+    const fullName=firstContactValue(contact.name);
+    const nameParts=fullName.split(/\s+/).filter(Boolean);
+    const firstName=document.getElementById("cc_new_first_name");
+    const lastName=document.getElementById("cc_new_last_name");
+    const phone=document.getElementById("cc_new_phone");
+    if(firstName&&fullName)firstName.value=nameParts.shift()||"";
+    if(lastName&&fullName)lastName.value=nameParts.join(" ");
+    if(phone){phone.value=firstContactValue(contact.tel);fmtPhone(phone);}
+    showToast("Контакт підставлено. Перевірте дані перед збереженням");
+  }catch(error){
+    if(error&&error.name!=="AbortError")alert("Не вдалося відкрити контакти телефону");
   }
 }
 
@@ -858,6 +900,16 @@ async function saveNewClient(){
   if(saveButton){saveButton.disabled=true;saveButton.textContent="Збереження...";}
   try{
     const res=await fetch("/api/clients",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(res.status===409&&payload.phone){
+      const existing=await findClientByExactPhone(payload.phone);
+      if(existing){
+        const fullName=((existing.first_name||"")+" "+(existing.last_name||"")).trim();
+        selectClient(Number(existing.id),fullName,existing.phone||"");
+        closeNewClientModal();
+        showToast("Цей номер уже є в базі — вибрано наявного клієнта");
+        return;
+      }
+    }
     if(!res.ok){const error=await res.json();alert(error.detail||"Не вдалося додати клієнта");return;}
     const client=await res.json();
     const fullName=((client.first_name||"")+" "+(client.last_name||"")).trim();
@@ -869,6 +921,20 @@ async function saveNewClient(){
     alert("Не вдалося додати клієнта. Перевірте з'єднання та спробуйте ще раз.");
   }finally{
     if(saveButton){saveButton.disabled=false;saveButton.textContent="Додати клієнта";}
+  }
+}
+function phoneMatchKey(value){
+  const digits=String(value||"").replace(/\D/g,"");
+  return digits.length>=10?digits.slice(-10):digits;
+}
+async function findClientByExactPhone(phone){
+  const key=phoneMatchKey(phone);
+  if(!key)return null;
+  try{
+    const list=await fetch("/api/clients/search?q="+encodeURIComponent(phone)).then(function(response){return response.json();});
+    return (Array.isArray(list)?list:[]).find(function(client){return phoneMatchKey(client.phone)===key;})||null;
+  }catch(error){
+    return null;
   }
 }
 async function openClientsModal(){
