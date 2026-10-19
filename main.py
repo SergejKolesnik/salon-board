@@ -3,7 +3,7 @@ Cosmo — розклад косметологічного кабінету
 Запуск: uvicorn main:app --reload
 """
 
-import json, hashlib, secrets, os, urllib.request, urllib.error
+import json, hashlib, secrets, os, re, urllib.request, urllib.error
 import uuid as uuid_lib
 from datetime import date, datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
@@ -81,6 +81,24 @@ def turso_batch(statements):
     )
     with urllib.request.urlopen(req) as r:
         return json.load(r)
+
+def normalize_phone(value: str) -> str:
+    """Store recognized Ukrainian numbers in canonical +380XXXXXXXXX form."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 14 and digits.startswith("00380"):
+        digits = digits[2:]
+    if len(digits) == 12 and digits.startswith("380"):
+        return f"+{digits}"
+    if len(digits) == 11 and digits.startswith("80"):
+        return f"+3{digits}"
+    if len(digits) == 10 and digits.startswith("0"):
+        return f"+38{digits}"
+    if len(digits) == 9:
+        return f"+380{digits}"
+    return raw
 
 def init_db():
     turso_batch([
@@ -188,6 +206,20 @@ def init_db():
             turso_exec(f"UPDATE {table} SET updated_at=datetime('now') WHERE updated_at IS NULL", [])
         except Exception:
             pass
+    # Normalize existing client phones once and keep the migration idempotent.
+    try:
+        client_phones = turso("SELECT id, phone FROM clients WHERE COALESCE(phone, '') <> ''")
+        for client in client_phones:
+            current_phone = (client.get("phone") or "").strip()
+            normalized_phone = normalize_phone(current_phone)
+            if normalized_phone != current_phone:
+                turso_exec(
+                    "UPDATE clients SET phone=?, updated_at=datetime('now'), version=COALESCE(version,1)+1 WHERE id=?",
+                    [normalized_phone, int(client["id"])],
+                )
+    except Exception:
+        # Phone cleanup must never prevent the application from starting.
+        pass
     # Service catalog metadata is additive and future-ready; existing rows remain valid.
     for column_sql in ["price_cents INTEGER", "duration_min INTEGER"]:
         try:
@@ -753,6 +785,7 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
     selected_services, service_label = resolve_services(a.service_ids, a.service)
     # ─── CRM: знайти або створити клієнта ────────────────────────────────
     client_id = None
+    phone = normalize_phone(a.phone)
     # Якщо client_id переданий явно з фронтенду — перевірити чи існує
     if a.client_id:
         existing = turso("SELECT id FROM clients WHERE id = ?", [a.client_id])
@@ -760,8 +793,8 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
             client_id = int(existing[0]['id'])
     # Інакше — автоматичний пошук/створення за телефоном
     if client_id is None:
-        if a.phone:
-            existing_clients = turso("SELECT id FROM clients WHERE phone = ?", [a.phone])
+        if phone:
+            existing_clients = turso("SELECT id FROM clients WHERE phone = ?", [phone])
             if existing_clients:
                 client_id = int(existing_clients[0]['id'])
             else:
@@ -770,7 +803,7 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
                 last_name = name_parts[1] if len(name_parts) > 1 else ''
                 cid = turso_exec(
                     "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
-                    [first_name, last_name, a.phone]
+                    [first_name, last_name, phone]
                 )
                 client_id = int(cid) if cid is not None else None
         else:
@@ -785,7 +818,7 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
     # ─────────────────────────────────────────────────────────────────────
     status = a.status or "scheduled"
     appointment_id = turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id,status) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    [a.master_id, a.client_name, a.phone, service_label, a.appt_date, a.start_time, a.duration_min, a.notes, client_id, status])
+                    [a.master_id, a.client_name, phone, service_label, a.appt_date, a.start_time, a.duration_min, a.notes, client_id, status])
     appointment_id = int(appointment_id) if appointment_id is not None else None
     if appointment_id:
         replace_appointment_services(appointment_id, selected_services, service_label)
@@ -943,7 +976,7 @@ def create_client(data: ClientCreate, token: str = Cookie(default=None)):
     if not first_name:
         raise HTTPException(400, "Вкажіть ім'я клієнта")
 
-    phone = data.phone.strip()
+    phone = normalize_phone(data.phone)
     if phone:
         existing = turso("SELECT id FROM clients WHERE phone=? AND deleted_at IS NULL", [phone])
         if existing:
@@ -1003,9 +1036,14 @@ def search_clients(q: str = "", token: str = Cookie(default=None)):
     if len(q.strip()) < 2:
         return []
     like = f"%{q.strip()}%"
+    phone_digits = re.sub(r"\D", "", q)
+    phone_like = f"%{phone_digits}%" if len(phone_digits) >= 2 else "__no_phone_match__"
     rows = turso(
-        "SELECT * FROM clients WHERE first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? ORDER BY updated_at DESC, id DESC LIMIT 10",
-        [like, like, like]
+        """SELECT * FROM clients
+           WHERE first_name LIKE ? OR last_name LIKE ? OR phone LIKE ?
+              OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone,'+',''),'(',''),')',''),'-',''),' ','') LIKE ?
+           ORDER BY updated_at DESC, id DESC LIMIT 10""",
+        [like, like, like, phone_like]
     )
     return [{
         "id": int(r["id"]),
@@ -1047,7 +1085,7 @@ def update_client(client_id: int, data: ClientUpdate, token: str = Cookie(defaul
         raise HTTPException(404, "РљР»С–С”РЅС‚Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ")
     turso_exec(
         "UPDATE clients SET first_name=?, last_name=?, phone=?, birthday=?, notes=?, updated_at=datetime('now'), version=COALESCE(version,1)+1 WHERE id=?",
-        [data.first_name, data.last_name, data.phone, data.birthday, data.notes, client_id]
+        [data.first_name, data.last_name, normalize_phone(data.phone), data.birthday, data.notes, client_id]
     )
     return {"ok": True, "id": client_id}
 
@@ -1118,7 +1156,7 @@ def ensure_push_client(data: Dict[str, Any]):
         rows = turso("SELECT id FROM clients WHERE id=?", [int(client_id)])
         if rows:
             return int(rows[0]["id"])
-    phone = (data.get("phone") or "").strip()
+    phone = normalize_phone(data.get("phone") or "")
     client_name = (data.get("client_name") or "").strip()
     if phone:
         rows = turso("SELECT id FROM clients WHERE phone=?", [phone])
@@ -1151,7 +1189,7 @@ def push_update_client(item: SyncPushItem, sess: dict):
         [
             data.get("first_name") or "",
             data.get("last_name") or "",
-            data.get("phone") or "",
+            normalize_phone(data.get("phone") or ""),
             data.get("birthday") or "",
             data.get("notes") or "",
             item.local_id or "",
@@ -1177,7 +1215,7 @@ def push_create_appointment(item: SyncPushItem, sess: dict):
         [
             master_id,
             data.get("client_name") or "",
-            data.get("phone") or "",
+            normalize_phone(data.get("phone") or ""),
             service_label,
             data.get("appt_date"),
             data.get("start_time"),
@@ -1221,7 +1259,7 @@ def push_update_appointment(item: SyncPushItem, sess: dict):
         [
             master_id,
             data.get("client_name") or "",
-            data.get("phone") or "",
+            normalize_phone(data.get("phone") or ""),
             service_label,
             data.get("appt_date"),
             data.get("start_time"),

@@ -35,7 +35,7 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('selectClient(Number(client.id),fullName,client.phone||"")', js)
         self.assertNotIn('openAddModal(', js[js.index("async function saveNewClient"):])
         self.assertIn(".add-client-btn", css)
-        self.assertIn('salon-board-shell-v11', worker)
+        self.assertIn('salon-board-shell-v12', worker)
 
     def test_mobile_appointment_actions_client_picker_and_calendar_cues(self):
         js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
@@ -49,6 +49,33 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn("mobileDaysAutoPositioned", js)
         self.assertIn(".cal-day-count", css)
         self.assertIn("grid-template-columns:minmax(0,1fr) minmax(0,1fr)", css)
+
+    def test_client_selection_sorting_and_optional_detail_reminders(self):
+        js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
+        css = (ROOT / "static/css/master.css").read_text(encoding="utf-8")
+
+        suggestions = js[js.index("function showClientSuggestions"):js.index("function hideClientSuggestions")]
+        self.assertIn('item.addEventListener("click"', suggestions)
+        self.assertNotIn('onclick="selectClient', suggestions)
+        self.assertIn('localeCompare(b.name,"uk"', js)
+        self.assertIn("missingDetails", js)
+        self.assertIn("Телефон і дата народження бажані", js)
+        self.assertIn(".new-client-hint", css)
+
+    def test_phone_normalization_contract(self):
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "normalize_phone")
+        namespace = {"re": __import__("re")}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "main.py", "exec"), namespace)
+        normalize = namespace["normalize_phone"]
+
+        for value in ("050 123 45 67", "+38 (050) 123-45-67", "380501234567", "80501234567", "501234567"):
+            self.assertEqual(normalize(value), "+380501234567")
+        self.assertEqual(normalize(""), "")
+        self.assertEqual(normalize("+48 123 456 789"), "+48 123 456 789")
+        self.assertIn("Normalize existing client phones", source)
+        self.assertIn('normalize_phone(data.get("phone") or "")', source)
 
     def test_resolve_services_keeps_requested_order(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
