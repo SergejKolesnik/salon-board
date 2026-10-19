@@ -164,3 +164,48 @@ a[href="/login"] img{height:80px!important;width:auto!important;display:block!im
 .client-suggest-item:hover{background:var(--accent-light)}
 .cs-name{font-size:13px;font-weight:600;font-family:var(--font-head);color:var(--text)}
 .cs-phone{font-size:11px;color:var(--muted)}
+
+
+/* Keep appointment actions reachable on small screens. */
+#modalOverlay .modal{
+  max-height:calc(100vh - 24px);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+#modalOverlay .appointment-actions{
+  position:sticky;
+  bottom:-24px;
+  z-index:5;
+  margin-left:-24px;
+  margin-right:-24px;
+  margin-bottom:-24px;
+  padding:12px 24px calc(12px + env(safe-area-inset-bottom));
+  background:var(--surface);
+  border-top:1px solid var(--border);
+  box-shadow:0 -8px 18px rgba(0,0,0,.18);
+}
+.service-manage-btn{
+  white-space:nowrap;
+  padding:9px 10px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--surface2);
+  color:var(--text);
+  cursor:pointer;
+  font-weight:700;
+}
+@media (max-width:640px){
+  .service-picker{flex-wrap:wrap}
+  .service-picker select{min-width:100%;flex-basis:100%}
+  .service-add-btn,.service-manage-btn{flex:1}
+  #modalOverlay{align-items:flex-start;padding:8px}
+  #modalOverlay .modal{max-height:calc(100vh - 16px);padding:18px}
+  #modalOverlay .appointment-actions{
+    bottom:-18px;
+    margin-left:-18px;
+    margin-right:-18px;
+    margin-bottom:-18px;
+    padding-left:18px;
+    padding-right:18px;
+  }
+}
