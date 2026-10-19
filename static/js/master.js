@@ -429,12 +429,49 @@ function breakEndTime(start,duration){
   const mins=toMin(start)+parseInt(duration||60);
   return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");
 }
+function ensureAppointmentModalActions(){
+  const overlay=document.getElementById("modalOverlay");
+  const modal=overlay&&overlay.querySelector(".modal");
+  if(!modal)return;
+  let footer=modal.querySelector(".modal-footer");
+  if(!footer){
+    footer=document.createElement("div");
+    footer.className="modal-footer appointment-actions";
+    modal.appendChild(footer);
+  }else{
+    footer.classList.add("appointment-actions");
+  }
+  let save=footer.querySelector('[data-role="save-appointment"], [onclick*="saveAppt"]');
+  if(!save){
+    save=document.createElement("button");
+    save.type="button";
+    save.className="btn btn-primary";
+    save.dataset.role="save-appointment";
+    save.textContent="Зберегти";
+    save.onclick=saveAppt;
+    footer.appendChild(save);
+  }else{
+    save.dataset.role="save-appointment";
+    save.textContent="Зберегти";
+  }
+  let cancel=footer.querySelector('[data-role="cancel-appointment"]');
+  if(!cancel){
+    cancel=document.createElement("button");
+    cancel.type="button";
+    cancel.className="btn";
+    cancel.dataset.role="cancel-appointment";
+    cancel.textContent="Скасувати";
+    cancel.onclick=closeModal;
+    footer.insertBefore(cancel,save);
+  }
+}
 function openAddModal(date,time){
   editingId=null;
   editingBreakId=null;
   selectedClientId=null;hideClientSuggestions();
   selectedServiceIds=[];
   ensureEventTypeUi();
+  ensureAppointmentModalActions();
   document.getElementById("modalTitle").textContent="Новий запис";
   document.getElementById("deleteBtn").classList.add("hidden");
   var et=document.getElementById("fEventType");if(et)et.value="appointment";
@@ -471,6 +508,7 @@ document.getElementById("detailEditBtn").onclick=function(){
 editingId=a.id;
 editingBreakId=null;
 ensureEventTypeUi();
+ensureAppointmentModalActions();
 document.getElementById("modalTitle").textContent="\u0420\u0435\u0434\u0430\u0433\u0443\u0432\u0430\u0442\u0438";
 document.getElementById("deleteBtn").classList.remove("hidden");
 var et=document.getElementById("fEventType");if(et)et.value="appointment";
@@ -938,7 +976,7 @@ function ensureServicePickerUi(serviceRow){
   const picker=document.createElement("div");
   picker.id="servicePicker";
   picker.className="service-picker";
-  picker.innerHTML='<select id="servicePickerSelect" aria-label="Додати процедуру"></select><button type="button" class="service-add-btn" onclick="addSelectedService()">+ Додати</button>';
+  picker.innerHTML='<select id="servicePickerSelect" aria-label="Додати процедуру"></select><button type="button" class="service-add-btn" onclick="addSelectedService()">+ Додати</button><button type="button" class="service-manage-btn" onclick="openServiceManager()">⚙ Процедури</button>';
   select.parentNode.insertBefore(picker,select);
   const chips=document.createElement("div");
   chips.id="serviceChips";
