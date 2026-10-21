@@ -7,6 +7,7 @@ let viewDays=7,periodStart=getMonday(new Date());
 let weekStart=getMonday(new Date());
 let editingId=null,editingBreakId=null,mobileDay=new Date();
 let selectedClientId=null;
+let saveInFlight=false;
 let shouldSmartScrollDesktop=true;
 let clientsDirectory=[];
 let clientsDirectoryLoaded=false;
@@ -491,6 +492,9 @@ function ensureAppointmentModalActions(){
   }else{
     save.dataset.role="save-appointment";
     save.textContent="Зберегти";
+    save.type="button";
+    save.removeAttribute("onclick");
+    save.onclick=saveAppt;
   }
   let cancel=footer.querySelector('[data-role="cancel-appointment"], [onclick*="closeModal"]');
   if(!cancel){
@@ -633,13 +637,26 @@ function closeDetail(){document.getElementById("detailOverlay").classList.add("h
 document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
 document.getElementById("detailOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail();});
 async function saveAppt(){
+  if(saveInFlight)return;
   const eventType=(document.getElementById("fEventType")||{value:"appointment"}).value;
+  const saveButton=document.querySelector('[data-role="save-appointment"]');
+  saveInFlight=true;
+  if(saveButton){saveButton.disabled=true;saveButton.setAttribute("aria-busy","true");}
+  try{
   if(eventType==="break"){
     const start=document.getElementById("fTime").value.slice(0,5);
     const body={master_id:masterId,break_date:document.getElementById("fDate").value,start_time:start,end_time:breakEndTime(start,document.getElementById("fDuration").value),label:(document.getElementById("fBreakLabel")||{value:""}).value.trim()||"Зайнято"};
     const url=editingBreakId?`/api/breaks/${editingBreakId}`:"/api/breaks";
     const res=await fetch(url,{method:editingBreakId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+    const saved=await res.json();
+    const savedBreak=saved&&typeof saved==="object"?(saved.break||saved):null;
+    if(savedBreak&&savedBreak.id!=null){
+      const index=breaks.findIndex(x=>String(x.id)===String(savedBreak.id));
+      if(index>=0)breaks[index]={...breaks[index],...savedBreak};
+      else breaks.push(savedBreak);
+      renderAll();
+    }
     closeModal();showToast(editingBreakId?"Оновлено":"Збережено");
     mobileDay=new Date(body.break_date+"T12:00:00");
     if(window.innerWidth<=768){
@@ -648,7 +665,7 @@ async function saveAppt(){
       pendingMobileScrollIso=body.break_date;
     }
     shouldSmartScrollDesktop=false;
-    await loadWeek();
+    loadWeek();
     return;
   }
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
@@ -657,6 +674,14 @@ async function saveAppt(){
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
   const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+  const saved=await res.json();
+  const savedAppointment=saved&&typeof saved==="object"?(saved.appointment||saved):null;
+  if(savedAppointment&&savedAppointment.id!=null){
+    const index=appointments.findIndex(x=>String(x.id)===String(savedAppointment.id));
+    if(index>=0)appointments[index]={...appointments[index],...savedAppointment};
+    else appointments.push(savedAppointment);
+    renderAll();
+  }
   closeModal();showToast(editingId?"Оновлено":"Збережено");
   mobileDay=new Date(body.appt_date+"T12:00:00");
   if(window.innerWidth<=768){
@@ -665,7 +690,11 @@ async function saveAppt(){
     pendingMobileScrollIso=body.appt_date;
   }
   shouldSmartScrollDesktop=false;
-  await loadWeek();
+  loadWeek();
+  }finally{
+    saveInFlight=false;
+    if(saveButton){saveButton.disabled=false;saveButton.removeAttribute("aria-busy");}
+  }
 }
 async function deleteAppt(){
   if(!editingId||!confirm("Видалити запис?"))return;
