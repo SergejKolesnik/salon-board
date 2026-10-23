@@ -668,7 +668,7 @@ async function saveAppt(){
     loadWeek();
     return;
   }
-  const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
+  const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:selectedServiceIds.map(function(id){var service=services.find(function(item){return Number(item.id)===Number(id);});return service?service.name:"";}).filter(Boolean).join(" + ")||document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
   body.service_ids=selectedServiceIds.slice();
   if(!body.client_name||!body.service){alert("Вкажіть ім\u0027я клієнта та хоча б одну процедуру");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
