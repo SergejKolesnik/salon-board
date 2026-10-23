@@ -670,7 +670,7 @@ async function saveAppt(){
   }
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
   body.service_ids=selectedServiceIds.slice();
-  if(!body.client_name||!body.service){alert("Заповніть ім\u0027я і послугу");return;}
+  if(!body.client_name||!body.service){alert("Вкажіть ім\u0027я клієнта та хоча б одну процедуру");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
   const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
@@ -1324,7 +1324,7 @@ function ensureServicePickerUi(serviceRow){
   const picker=document.createElement("div");
   picker.id="servicePicker";
   picker.className="service-picker";
-  picker.innerHTML='<select id="servicePickerSelect" aria-label="Додати процедуру"></select><button type="button" class="service-add-btn" onclick="addSelectedService()">+ Додати</button><button type="button" class="service-manage-btn" onclick="openServiceManager()">⚙ Процедури</button>';
+  picker.innerHTML='<select id="servicePickerSelect" multiple size="4" aria-label="Оберіть процедури"></select><button type="button" class="service-add-btn" onclick="addSelectedService()">+ Додати вибрані</button><button type="button" class="service-manage-btn" onclick="openServiceManager()">⚙ Процедури</button>';
   select.parentNode.insertBefore(picker,select);
   const chips=document.createElement("div");
   chips.id="serviceChips";
@@ -1340,7 +1340,7 @@ function renderServicePicker(){
   const select=document.getElementById("servicePickerSelect");
   if(select){
     const available=services.filter(function(s){return !selected.has(Number(s.id));}).sort(function(a,b){return a.name.localeCompare(b.name,"uk",{sensitivity:"base"});});
-    select.innerHTML='<option value="">Оберіть процедуру...</option>'+available.map(function(s){return '<option value="'+s.id+'">'+escapeHtml(s.name)+'</option>';}).join("");
+    select.innerHTML=available.length?available.map(function(s){return '<option value="'+s.id+'">'+escapeHtml(s.name)+'</option>';}).join(""):'<option value="" disabled>Усі процедури вже вибрані</option>';
   }
   const chips=document.getElementById("serviceChips");
   if(chips){
@@ -1356,10 +1356,11 @@ function renderServicePicker(){
 
 function addSelectedService(){
   const select=document.getElementById("servicePickerSelect");
-  const id=select&&Number(select.value);
-  if(!id||selectedServiceIds.indexOf(id)!==-1)return;
-  selectedServiceIds.push(id);
-  if(select)select.value="";
+  if(!select)return;
+  Array.from(select.selectedOptions).forEach(function(option){
+    const id=Number(option.value);
+    if(id&&selectedServiceIds.indexOf(id)===-1)selectedServiceIds.push(id);
+  });
   renderServicePicker();
 }
 function removeSelectedService(id){
