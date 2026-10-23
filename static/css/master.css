@@ -228,3 +228,5 @@ a[href="/login"] img{height:80px!important;width:auto!important;display:block!im
   .new-client-modal .client-card-notes{grid-column:auto}
   .new-client-modal .modal-footer{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:12px 18px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border)}
 }
+
+                                                                                                         .app-version-badge{font-size:10px;font-weight:600;color:var(--muted);white-space:nowrap;margin-left:8px;opacity:.8}
