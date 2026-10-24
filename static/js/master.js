@@ -433,6 +433,12 @@ function ensureEventTypeUi(){
   const existingType=document.getElementById("fEventType");
   if(existingType){
     existingType.onchange=toggleEventType;
+    const existingRow=existingType.closest(".form-row");
+    if(existingRow){
+      existingRow.id="eventTypeRow";
+      existingRow.classList.remove("hidden");
+      existingRow.style.display="";
+    }
     ensureClientCreatorUi(rowOf("fClient"));
     ensureServicePickerUi(rowOf("fService"));
     return;
@@ -1425,7 +1431,7 @@ async function deleteMasterService(id){
 ensureMasterServiceUi();
 
 
-(function(){var originalSaveAppt=window.saveAppt;window.saveAppt=async function(){var serviceField=document.getElementById("fService");var chips=Array.from(document.querySelectorAll("#serviceChips .service-chip")).map(function(chip){return chip.firstChild?chip.firstChild.textContent.trim():"";}).filter(Boolean);if(serviceField&&chips.length&&!serviceField.value.trim())serviceField.value=chips.join(" + ");return originalSaveAppt.apply(this,arguments);};var topbar=document.querySelector(".topbar");if(topbar&&!document.getElementById("appVersionBadge")){var badge=document.createElement("span");badge.id="appVersionBadge";badge.className="app-version-badge";badge.textContent="PWA v19";var masterBadge=document.getElementById("masterNameBadge");if(masterBadge&&masterBadge.parentNode)masterBadge.parentNode.insertBefore(badge,masterBadge.nextSibling);else topbar.appendChild(badge);}})();
+(function(){var originalSaveAppt=window.saveAppt;window.saveAppt=async function(){var serviceField=document.getElementById("fService");var chips=Array.from(document.querySelectorAll("#serviceChips .service-chip")).map(function(chip){return chip.firstChild?chip.firstChild.textContent.trim():"";}).filter(Boolean);if(serviceField&&chips.length&&!serviceField.value.trim())serviceField.value=chips.join(" + ");return originalSaveAppt.apply(this,arguments);};var topbar=document.querySelector(".topbar");if(topbar&&!document.getElementById("appVersionBadge")){var badge=document.createElement("span");badge.id="appVersionBadge";badge.className="app-version-badge";badge.textContent="PWA v20";var masterBadge=document.getElementById("masterNameBadge");if(masterBadge&&masterBadge.parentNode)masterBadge.parentNode.insertBefore(badge,masterBadge.nextSibling);else topbar.appendChild(badge);}})();
 
 
 (function(){function syncVisibleServicesBeforeSave(){var serviceField=document.getElementById("fService");var chips=Array.from(document.querySelectorAll("#serviceChips .service-chip")).map(function(chip){return chip.firstChild?chip.firstChild.textContent.trim():"";}).filter(Boolean);if(serviceField&&chips.length)serviceField.value=chips.join(" + ");}document.addEventListener("click",function(event){var button=event.target.closest('button[onclick*="saveAppt"]');if(button)syncVisibleServicesBeforeSave();},true);})();
