@@ -9,13 +9,16 @@ from datetime import date, datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from body_module import install_body_module
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
 # ─── TURSO DB ──────────────────────────────────────────────────────────────────
 
-TURSO_URL = os.environ.get('TURSO_URL', 'https://salon-board-sergejkolesnik.aws-eu-west-1.turso.io')
-TURSO_TOKEN = os.environ.get('TURSO_TOKEN', 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODA0MDgyMDksImlkIjoiMDE5ZTg4OTItZTYwMS03NWRmLWE1ZjQtNzZiN2Q5YzkyZTcyIiwicmlkIjoiZWQ0YmQxZTAtMmZmZS00MDZlLWEyZGUtYTkzN2E3YmZjODlhIn0.KrVUUpG7zyHB-lr-zONJp3jZLjgMcWyLE4eaD0GqdeqIFsEMZEsy-WPe1rEY4FoAlSrIPIYGDJY4i-WsL3BqCA')
+TURSO_URL = os.environ.get('TURSO_URL')
+TURSO_TOKEN = os.environ.get('TURSO_TOKEN')
+if not TURSO_URL or not TURSO_TOKEN:
+    raise RuntimeError("Set TURSO_URL and TURSO_TOKEN in the hosting environment before starting Salon Board")
 
 def turso(sql: str, params=None):
     """Execute single SQL statement, return rows list."""
@@ -416,6 +419,8 @@ def require_auth(token: str = Cookie(default=None)):
     if not sess:
         raise HTTPException(401, "Не авторизовано")
     return sess
+
+install_body_module(app, turso, turso_exec, get_session)
 
 def require_admin(token: str = Cookie(default=None)):
     sess = get_session(token)
@@ -1759,6 +1764,7 @@ html,body{min-height:100vh;font-family:var(--font);background:var(--bg);color:va
 .spacer{flex:1}
 .role-badge{font-size:11px;font-weight:700;font-family:var(--font-head);background:var(--accent-light);color:var(--accent);padding:3px 10px;border-radius:20px;border:1px solid rgba(0,200,180,.3)}
 .logout-btn{background:var(--danger-light);border:1px solid rgba(248,113,113,.3);border-radius:7px;padding:5px 12px;color:var(--danger);font-family:var(--font-head);font-size:12px;font-weight:600;cursor:pointer}
+.body-link{color:var(--accent);text-decoration:none;border:1px solid rgba(0,200,180,.35);border-radius:7px;padding:5px 12px;font-family:var(--font-head);font-size:12px;font-weight:600}
 .main{max-width:860px;margin:0 auto;padding:32px 20px}
 h1{font-family:var(--font-head);font-size:22px;font-weight:800;margin-bottom:6px}
 .subtitle{color:var(--muted);font-size:14px;margin-bottom:32px}
@@ -1828,6 +1834,7 @@ h1{font-family:var(--font-head);font-size:22px;font-weight:800;margin-bottom:6px
 <div class="topbar">
   <span class="topbar-logo">Body Balance</span>
   <div class="spacer"></div>
+  <a class="body-link" href="/body">Вимірювання</a>
   <span class="role-badge">Адмін</span>
   <button class="logout-btn" onclick="doLogout()">Вийти</button>
 </div>
