@@ -3,7 +3,7 @@ Cosmo — розклад косметологічного кабінету
 Запуск: uvicorn main:app --reload
 """
 
-import json, hashlib, secrets, os, re, urllib.request, urllib.error
+import json, hashlib, secrets, os, re, sqlite3, threading, urllib.request, urllib.error
 import uuid as uuid_lib
 from datetime import date, datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
@@ -18,11 +18,31 @@ from typing import Any, Dict, Optional
 
 TURSO_URL = os.environ.get('TURSO_URL')
 TURSO_TOKEN = os.environ.get('TURSO_TOKEN')
+DEMO_MODE = os.environ.get('SALON_BOARD_DEMO') == '1'
+_demo_db = None
+_demo_lock = threading.Lock()
 if not TURSO_URL or not TURSO_TOKEN:
+    if DEMO_MODE:
+        # Explicit opt-in only: lets the complete salon workflow run locally without cloud secrets.
+        _demo_db = sqlite3.connect(os.environ.get('SALON_BOARD_DEMO_DB', 'salon-board-demo.db'), check_same_thread=False)
+        _demo_db.row_factory = sqlite3.Row
+    else:
+        # Production deliberately has no local fallback, so a missing cloud database cannot lose data.
+        raise RuntimeError("Set TURSO_URL and TURSO_TOKEN in the hosting environment before starting Salon Board")
+
+if not TURSO_URL or not TURSO_TOKEN:
+    TURSO_URL = None
+    TURSO_TOKEN = None
+
+if not TURSO_URL and not DEMO_MODE:
     raise RuntimeError("Set TURSO_URL and TURSO_TOKEN in the hosting environment before starting Salon Board")
 
 def turso(sql: str, params=None):
     """Execute single SQL statement, return rows list."""
+    if DEMO_MODE:
+        with _demo_lock:
+            cursor = _demo_db.execute(sql, params or [])
+            return [dict(row) for row in cursor.fetchall()]
     stmt = {'sql': sql}
     if params:
         args = []
@@ -50,6 +70,11 @@ def turso(sql: str, params=None):
 
 def turso_exec(sql: str, params=None):
     """Execute and return lastInsertRowid."""
+    if DEMO_MODE:
+        with _demo_lock:
+            cursor = _demo_db.execute(sql, params or [])
+            _demo_db.commit()
+            return cursor.lastrowid
     stmt = {'sql': sql}
     if params:
         args = []
@@ -75,6 +100,12 @@ def turso_exec(sql: str, params=None):
 
 def turso_batch(statements):
     """Execute multiple SQL statements in one request."""
+    if DEMO_MODE:
+        with _demo_lock:
+            for statement in statements:
+                _demo_db.execute(statement)
+            _demo_db.commit()
+        return None
     requests = [{'type': 'execute', 'stmt': {'sql': s}} for s in statements]
     requests.append({'type': 'close'})
     payload = json.dumps({'requests': requests}).encode()
@@ -1557,14 +1588,14 @@ def login(data: LoginIn, response: Response):
     pwd_admin = get_setting("pwd_admin")
     if data.password == pwd_admin:
         token = create_session("admin")
-        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=True)
+        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=not DEMO_MODE)
         return {"role": "admin", "master_id": None}
     # Перевірка паролю майстра
     if data.master_id:
         pwd_master = get_setting(f"pwd_master_{data.master_id}")
         if pwd_master and data.password == pwd_master:
             token = create_session("master", data.master_id)
-            response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=True)
+            response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=not DEMO_MODE)
             perms = get_master_perms(data.master_id)
             return {"role": "master", "master_id": data.master_id, "perms": perms}
     raise HTTPException(401, "Невірний пароль")
