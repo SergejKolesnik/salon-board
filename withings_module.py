@@ -188,6 +188,9 @@ def install_withings_module(app, turso, turso_exec, get_session):
         query = urllib.parse.urlencode({"response_type": "code", "client_id": values["client_id"], "redirect_uri": values["redirect_uri"], "scope": "user.metrics", "state": raw_state})
         return {"authorize_url": WITHINGS_OAUTH_URL + "?" + query}
 
+    # Keep the production callback already registered in Withings valid while
+    # also exposing the shorter internal route used by the new module.
+    @app.get("/api/integrations/withings/callback")
     @app.get("/api/withings/callback")
     def callback(code: str = Query(...), state: str = Query(...)):
         rows = turso("SELECT * FROM withings_connections WHERE state_hash=? AND status='awaiting_oauth'", [hashlib.sha256(state.encode()).hexdigest()])

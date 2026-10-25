@@ -15,7 +15,7 @@
 1. **Салонна станція.** Працівник відкриває сесію для конкретного клієнта, отримує останній вимір зі спільних ваг та підтверджує його. Ваги ніколи самі не визначають людину.
 2. **Особисті ваги клієнта.** Клієнт авторизує свій Withings у вікні Withings. Після синхронізації вимір теж потрапляє в чергу, а не одразу в медичну/клієнтську картку.
 
-OAuth-код, Client Secret, refresh token та access token не потрапляють у браузер. Сервер зберігає токени лише у зашифрованому вигляді. Для активації додайте у змінні середовища хостингу значення з `.env.example`: `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REDIRECT_URI`, `WITHINGS_TOKEN_ENCRYPTION_KEY`. Останній — окремий ключ Fernet, наприклад згенерований командою `Fernet.generate_key()` у захищеному середовищі; не комітьте його.
+OAuth-код, Client Secret, refresh token та access token не потрапляють у браузер. Сервер зберігає токени лише у зашифрованому вигляді. Для активації додайте у змінні середовища Render значення з `.env.example`: `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REDIRECT_URI`, `WITHINGS_TOKEN_ENCRYPTION_KEY`. Для наявного застосунку Withings використайте вже зареєстрований callback `https://salon-board.onrender.com/api/integrations/withings/callback`. Останній ключ — окремий Fernet-ключ, згенерований у захищеному середовищі; не комітьте його.
 
 Перед запуском потрібно задати `TURSO_URL` і `TURSO_TOKEN` у змінних середовища. Орієнтир — `.env.example`; фактичні секрети ніколи не комітяться.
 
