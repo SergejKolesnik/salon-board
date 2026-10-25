@@ -1588,14 +1588,14 @@ def login(data: LoginIn, response: Response):
     pwd_admin = get_setting("pwd_admin")
     if data.password == pwd_admin:
         token = create_session("admin")
-        response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=not DEMO_MODE)
+        response.set_cookie("token", token, httponly=False, samesite="lax" if DEMO_MODE else "none", max_age=86400*30, secure=not DEMO_MODE)
         return {"role": "admin", "master_id": None}
     # Перевірка паролю майстра
     if data.master_id:
         pwd_master = get_setting(f"pwd_master_{data.master_id}")
         if pwd_master and data.password == pwd_master:
             token = create_session("master", data.master_id)
-            response.set_cookie("token", token, httponly=False, samesite="none", max_age=86400*30, secure=not DEMO_MODE)
+            response.set_cookie("token", token, httponly=False, samesite="lax" if DEMO_MODE else "none", max_age=86400*30, secure=not DEMO_MODE)
             perms = get_master_perms(data.master_id)
             return {"role": "master", "master_id": data.master_id, "perms": perms}
     raise HTTPException(401, "Невірний пароль")
