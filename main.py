@@ -1699,7 +1699,11 @@ def master_page(token: str = Cookie(default=None)):
     sess = get_session(token)
     if not sess:
         return RedirectResponse("/login")
-    return MASTER_HTML
+    # Keep the master schedule focused, while making the staffed weighing flow
+    # available without granting access to the admin configuration screens.
+    body_shortcut = '''<a class="body-station-shortcut" href="/body">⚖️ Вимірювання</a>
+    <style>.body-station-shortcut{position:fixed;right:18px;bottom:18px;z-index:70;padding:11px 15px;border-radius:999px;background:#00C8B4;color:#121214;text-decoration:none;font:700 13px Inter,system-ui,sans-serif;box-shadow:0 5px 18px rgba(0,200,180,.35)}.body-station-shortcut:hover{filter:brightness(1.08)}@media(max-width:640px){.body-station-shortcut{bottom:72px;right:14px}}</style>'''
+    return HTMLResponse(MASTER_HTML.replace("</body>", body_shortcut + "</body>"))
 
 
 LOGIN_HTML = """<!DOCTYPE html>

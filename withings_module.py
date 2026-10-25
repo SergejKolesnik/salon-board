@@ -64,6 +64,12 @@ def install_withings_module(app, turso, turso_exec, get_session):
             raise HTTPException(401, "Не авторизовано")
         return current
 
+    def require_admin(token):
+        current = require_login(token)
+        if current.get("role") != "admin":
+            raise HTTPException(403, "Підключення Withings налаштовує лише адміністратор")
+        return current
+
     def require_config():
         if not configured():
             raise HTTPException(503, "Withings OAuth ще не налаштовано на сервері")
@@ -158,7 +164,7 @@ def install_withings_module(app, turso, turso_exec, get_session):
 
     @app.post("/api/withings/connect")
     def connect(payload: ConnectIn, token: str = Cookie(default=None)):
-        require_login(token)
+        require_admin(token)
         values = require_config()
         client_exists(payload.client_id)
         raw_state = secrets.token_urlsafe(32)
@@ -172,7 +178,7 @@ def install_withings_module(app, turso, turso_exec, get_session):
     @app.post("/api/withings/station/connect")
     def connect_station(token: str = Cookie(default=None)):
         """Connect the salon-owned Withings account, never a client account."""
-        require_login(token)
+        require_admin(token)
         values = require_config()
         raw_state = secrets.token_urlsafe(32)
         connection_id = str(uuid.uuid4())
