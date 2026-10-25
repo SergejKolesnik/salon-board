@@ -1682,7 +1682,8 @@ def get_icon():
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
-    return LOGIN_HTML
+    demo_button = '<button class="demo-btn" onclick="demoLogin()">Увійти в демо</button><p class="demo-note">Лише на цьому локальному комп’ютері. У хмарній версії кнопки немає.</p>' if DEMO_MODE else ''
+    return LOGIN_HTML.replace("{{DEMO_LOGIN}}", demo_button)
 
 @app.get("/", response_class=HTMLResponse)
 def index(token: str = Cookie(default=None)):
@@ -1723,6 +1724,7 @@ h2{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:700;margin-bot
 .field select:focus,.field input:focus{border-color:#00C8B4}
 .btn{width:100%;padding:12px;background:#00C8B4;color:#121214;border:none;border-radius:8px;font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-top:4px}
 .btn:hover{opacity:.88}
+.demo-btn{width:100%;padding:10px;background:transparent;color:#00C8B4;border:1px solid #00C8B4;border-radius:8px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;cursor:pointer;margin-top:10px}.demo-note{font-size:11px;line-height:1.35;color:#71717A;text-align:center;margin-top:7px}
 .err{color:#F87171;font-size:12px;margin-top:10px;text-align:center;min-height:18px}
 .master-field{display:none}
 </style>
@@ -1744,6 +1746,7 @@ h2{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:700;margin-bot
     <input type="password" id="pwd" placeholder="Введіть пароль" onkeydown="if(event.key==='Enter')doLogin()">
   </div>
   <button class="btn" onclick="doLogin()">Увійти</button>
+  {{DEMO_LOGIN}}
   <div class="err" id="errMsg"></div>
 </div>
 <script>
@@ -1775,6 +1778,7 @@ async function doLogin(){
     }
   }catch(e){err.textContent="Помилка з'єднання";}
 }
+function demoLogin(){currentRole='admin';document.getElementById('pwd').value='admin123';doLogin();}
 init();
 </script>
 </body>
