@@ -208,8 +208,19 @@ a[href="/login"] img{height:80px!important;width:auto!important;display:block!im
   .service-picker{flex-wrap:wrap}
   .service-picker select{min-width:100%;flex-basis:100%}
   .service-add-btn,.service-manage-btn{flex:1}
-  #modalOverlay{align-items:flex-start;padding:8px}
-  #modalOverlay .modal{max-height:calc(100vh - 16px);padding:18px}
+  /* Keep dialogs below the system status bar even after the browser changes
+     its visible viewport while the keyboard or client list is open. */
+  #modalOverlay{
+    align-items:flex-start;
+    height:100dvh;
+    min-height:100vh;
+    overflow-y:auto;
+    padding:max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  }
+  #modalOverlay .modal{
+    max-height:calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    padding:18px;
+  }
   #modalOverlay .appointment-actions{
     display:grid;
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);

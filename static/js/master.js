@@ -540,7 +540,11 @@ function openAddModal(date,time){
   buildTimeGrid();updateTimeBtns();
   setDur(60);
   document.getElementById("modalOverlay").classList.remove("hidden");
-  setTimeout(()=>document.getElementById("fClient").focus(),100);
+  // Auto-focus makes mobile browsers scroll a fixed dialog beneath the status
+  // bar and opens the client picker immediately. Let the user tap the field.
+  if(!window.matchMedia("(max-width: 640px)").matches){
+    setTimeout(()=>document.getElementById("fClient").focus(),100);
+  }
 }
 function openAddOnSlot(date,time){openAddModal(date,time);}
 function closeModal(){document.getElementById("modalOverlay").classList.add("hidden");}
