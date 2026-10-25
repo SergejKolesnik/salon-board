@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from body_module import install_body_module
+from withings_module import install_withings_module
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
@@ -421,6 +422,7 @@ def require_auth(token: str = Cookie(default=None)):
     return sess
 
 install_body_module(app, turso, turso_exec, get_session)
+install_withings_module(app, turso, turso_exec, get_session)
 
 def require_admin(token: str = Cookie(default=None)):
     sess = get_session(token)

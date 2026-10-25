@@ -11,3 +11,11 @@ services:
         sync: false
       - key: TURSO_TOKEN
         sync: false
+      - key: WITHINGS_CLIENT_ID
+        sync: false
+      - key: WITHINGS_CLIENT_SECRET
+        sync: false
+      - key: WITHINGS_REDIRECT_URI
+        sync: false
+      - key: WITHINGS_TOKEN_ENCRYPTION_KEY
+        sync: false
