@@ -1865,6 +1865,7 @@ h1{font-family:var(--font-head);font-size:22px;font-weight:800;margin-bottom:6px
 .link-wrap{padding:12px;background:var(--accent-light);border-radius:var(--radius-sm);border:1px solid rgba(0,200,180,.2);margin-bottom:12px;display:flex;align-items:center;gap:10px}
 .link-url{font-size:13px;color:var(--accent);font-family:var(--font-head);flex:1;word-break:break-all}
 .copy-btn{font-size:11px;padding:5px 10px;background:var(--accent);color:#121214;border:none;border-radius:4px;cursor:pointer;font-weight:700;white-space:nowrap}
+.body-hub{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0 0 24px;padding:17px 18px;border:1px solid rgba(0,200,180,.35);border-radius:12px;background:linear-gradient(110deg,rgba(0,200,180,.15),rgba(127,119,221,.10))}.body-hub h2{font-family:var(--font-head);font-size:15px;margin:0 0 5px}.body-hub p{font-size:12px;color:var(--muted);margin:0}.body-count{display:inline-flex;align-items:center;justify-content:center;min-width:25px;height:25px;border-radius:99px;background:var(--accent);color:#121214;font-size:12px;font-weight:800;margin-left:5px}.body-open{display:inline-block;text-decoration:none;background:var(--accent);color:#121214;padding:9px 12px;border-radius:8px;font-family:var(--font-head);font-size:12px;font-weight:800;white-space:nowrap}@media(max-width:540px){.body-hub{align-items:flex-start;flex-direction:column}.body-open{width:100%;text-align:center}}
 </style>
 </head>
 <body>
@@ -1878,6 +1879,10 @@ h1{font-family:var(--font-head);font-size:22px;font-weight:800;margin-bottom:6px
 <div class="main">
   <h1>Панель адміністратора</h1>
   <p class="subtitle">Управління майстрами, ролями та налаштуваннями</p>
+  <section class="body-hub">
+    <div><h2>⚖️ Вимірювання складу тіла <span id="bodyPending" class="body-count" style="display:none"></span></h2><p id="bodyStatus">Салонна станція та особисті Withings-клієнтів — з підтвердженням працівником.</p></div>
+    <a class="body-open" href="/body">Відкрити станцію →</a>
+  </section>
   <div class="tabs">
     <div class="tab active" onclick="switchTab('masters')">Майстри</div>
     <div class="tab" onclick="switchTab('roles')">Шаблони ролей</div>
@@ -1987,7 +1992,12 @@ async function init(){
   await loadTemplates();
   await loadMasters();
   await loadServices();
+  loadBodySummary();
   try{const p=await fetch('/api/settings/passwords').then(r=>r.json());document.getElementById('pwdAdmin').value=p.pwd_admin||'';}catch(e){}
+}
+
+async function loadBodySummary(){
+  try{const data=await fetch('/api/body/dashboard').then(r=>r.json());const badge=document.getElementById('bodyPending');if(data.pending?.length){badge.style.display='inline-flex';badge.textContent=data.pending.length;}document.getElementById('bodyStatus').textContent=data.active_session?'Відкрита сесія: очікується вимір із ваг.':'Салонна станція та особисті Withings-клієнтів — з підтвердженням працівником.';}catch(e){document.getElementById('bodyStatus').textContent='Модуль вимірювань готовий до підключення.';}
 }
 
 async function loadTemplates(){
