@@ -350,6 +350,38 @@ function renderScrollCalendar(){
     clearTimeout(mobileScrollTimer);
     mobileScrollTimer=setTimeout(()=>autoPositionVisibleMobileDay(),140);
   };
+  if(!cal.dataset.horizontalSwipeReady){
+    let swipe=null;
+    cal.addEventListener("touchstart",function(event){
+      const touch=event.touches&&event.touches[0];
+      if(touch)swipe={x:touch.clientX,y:touch.clientY,left:cal.scrollLeft,horizontal:false};
+    },{passive:true});
+    cal.addEventListener("touchmove",function(event){
+      const touch=event.touches&&event.touches[0];
+      if(!swipe||!touch)return;
+      const dx=touch.clientX-swipe.x,dy=touch.clientY-swipe.y;
+      if(Math.abs(dx)>8&&Math.abs(dx)>Math.abs(dy)*1.15){
+        swipe.horizontal=true;
+        event.preventDefault();
+        cal.scrollLeft=swipe.left-dx;
+      }
+    },{passive:false});
+    cal.addEventListener("touchend",function(){
+      if(!swipe)return;
+      if(swipe.horizontal){
+        const first=cal.querySelector(".cal-day-col");
+        const width=first?first.getBoundingClientRect().width:cal.clientWidth/3;
+        if(width>0){
+          const max=Math.max(0,cal.scrollWidth-cal.clientWidth);
+          const left=Math.max(0,Math.min(max,Math.round(cal.scrollLeft/width)*width));
+          cal.scrollTo({left,behavior:"smooth"});
+        }
+      }
+      swipe=null;
+    },{passive:true});
+    cal.addEventListener("touchcancel",function(){swipe=null;},{passive:true});
+    cal.dataset.horizontalSwipeReady="true";
+  }
 
   // Compact mobile action menu: keep the calendar visible until the user asks
   // for an action.
@@ -366,7 +398,9 @@ function renderScrollCalendar(){
     setTimeout(()=>{
       const col=cal.querySelector(`.cal-day-col[data-date="${keepMobileIso}"]`);
       if(!col)return;
-      col.scrollIntoView({behavior:"instant",inline:"start"});
+      const calRect=cal.getBoundingClientRect();
+      const colRect=col.getBoundingClientRect();
+      cal.scrollTo({left:cal.scrollLeft+colRect.left-calRect.left,behavior:"instant"});
       const slots=col.querySelector(".cal-slots");
       if(slots)slots.scrollTop=keepMobileTop;
     },50);
@@ -401,16 +435,20 @@ function autoPositionVisibleMobileDay(){
     const distance=Math.abs(col.getBoundingClientRect().left-calRect.left);
     if(distance<closestDistance){closest=col;closestDistance=distance;}
   });
-  if(closest)scrollMobileToRelevantTime(closest.dataset.date,false);
+  if(closest)scrollMobileToRelevantTime(closest.dataset.date,false,false);
 }
-function scrollMobileToRelevantTime(targetIso,force){
+function scrollMobileToRelevantTime(targetIso,force,alignHorizontal){
   if(window.innerWidth>768)return;
   if(!force&&mobileDaysAutoPositioned.has(targetIso))return;
   const cal=document.getElementById("scrollCal");
   if(!cal||!targetIso)return;
   const col=cal.querySelector(`.cal-day-col[data-date="${targetIso}"]`);
   if(!col)return;
-  col.scrollIntoView({behavior:"instant",inline:"start"});
+  if(alignHorizontal!==false){
+    const calRect=cal.getBoundingClientRect();
+    const colRect=col.getBoundingClientRect();
+    cal.scrollTo({left:cal.scrollLeft+colRect.left-calRect.left,behavior:"instant"});
+  }
   const calSlots=col.querySelector(".cal-slots");
   if(!calSlots)return;
   const dayAppointments=appointments.filter(a=>a.appt_date===targetIso);
@@ -1249,7 +1287,7 @@ function openAboutApp(){
 function applyBrandAssets(){
   const logo=document.querySelector(".topbar img");
   if(!logo)return;
-  logo.src="/static/branding/body-balance-wordmark.jpg";
+  logo.src="/static/branding/body-balance-wordmark-crop.png";
   logo.alt="Body Balance";
   logo.classList.add("brand-wordmark");
 }

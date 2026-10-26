@@ -5,7 +5,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .app{display:flex;flex-direction:column;height:100vh}
 .topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:88px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
 .topbar img{height:48px;width:auto}
-.topbar img.brand-wordmark{width:200px;height:64px;object-fit:cover;object-position:center 46%}
+.topbar img.brand-wordmark{width:188px;height:64px;object-fit:contain;object-position:center}
 .about-app-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);border-radius:50%;background:var(--surface2);color:var(--muted);font:700 16px var(--font-head);cursor:pointer;flex-shrink:0}
 .about-app-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
 .about-app-overlay{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.58)}
@@ -102,9 +102,9 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .status-cancelled{color:var(--danger);background:var(--danger-light);border-color:rgba(248,113,113,.3)}
 .status-no-show{color:#FBBF24;background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.32)}
 .mobile-wrap{display:none;flex-direction:column;flex:1;overflow:hidden}
-.scroll-calendar{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.scroll-calendar{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x pan-y}
 .scroll-calendar::-webkit-scrollbar{display:none}
-.cal-day-col{flex:0 0 calc(100%/3);scroll-snap-align:start;display:flex;flex-direction:column;border-right:1px solid var(--border);min-width:0}
+.cal-day-col{flex:0 0 calc(100%/3);scroll-snap-align:start;display:flex;flex-direction:column;border-right:1px solid var(--border);min-width:0;touch-action:pan-x pan-y}
 .cal-day-col:last-child{border-right:none}
 .cal-day-header{padding:8px 6px;text-align:center;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:2;flex-shrink:0}
 .cal-day-name{font-size:10px;font-weight:700;color:var(--muted);font-family:var(--font-head);text-transform:uppercase;letter-spacing:.5px}
@@ -112,7 +112,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .cal-day-count{display:inline-flex;margin-top:4px;padding:2px 6px;border-radius:999px;background:var(--accent-light);color:var(--accent);font-family:var(--font-head);font-size:9px;font-weight:700;line-height:1.25}
 .cal-day-col.today .cal-day-num{color:var(--accent)}
 .cal-day-col.today .cal-day-header{border-bottom:2px solid var(--accent)}
-.cal-slots{flex:1;overflow-y:auto;padding-bottom:80px}
+.cal-slots{flex:1;overflow-y:auto;padding-bottom:80px;touch-action:pan-x pan-y}
 .cal-slot{display:flex;gap:4px;min-height:52px;border-bottom:1px solid var(--border);padding:4px 4px 4px 2px;cursor:pointer;transition:background .1s;position:relative;overflow:visible}
 .cal-slot:hover{background:var(--accent-light)}
 .cal-slot-time{font-size:10px;color:var(--hint);font-family:var(--font-head);width:34px;flex-shrink:0;padding-top:2px;text-align:right;padding-right:4px}
@@ -152,8 +152,8 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
   .cal-day-col{height:100%;min-height:0}
   .cal-slots{min-height:0;overscroll-behavior:contain}
 }
-@media(max-width:768px){.topbar{gap:8px;padding:0 12px;height:64px}.topbar img{height:40px}.topbar img.brand-wordmark{width:136px;height:44px}.date-nav{gap:6px;padding:8px 10px}.week-label{font-size:14px;line-height:1.2;text-align:center}.master-menu-toggle{max-width:130px}.body-station-shortcut{display:none!important}.clients-btn,.services-btn,.about-app-btn{display:none!important}}
-@media(max-width:520px){.topbar{gap:6px;padding:0 8px}.topbar img.brand-wordmark{width:120px;height:42px}.master-menu-toggle{max-width:112px;font-size:12px}.service-picker{align-items:stretch;flex-direction:column}.service-add-btn{width:100%}}
+@media(max-width:768px){.topbar{justify-content:space-between;gap:8px;padding:0 12px;height:64px}.topbar .spacer{display:none}.topbar img{height:40px}.topbar img.brand-wordmark{width:172px;height:58px}.date-nav{gap:6px;padding:8px 10px}.week-label{font-size:14px;line-height:1.2;text-align:center}.master-menu-toggle{max-width:min(42vw,220px);margin-left:auto;justify-content:flex-end}.body-station-shortcut{display:none!important}.clients-btn,.services-btn,.about-app-btn{display:none!important}}
+@media(max-width:520px){.topbar{gap:6px;padding:0 10px}.topbar img.brand-wordmark{width:158px;height:56px}.master-menu-toggle{max-width:min(40vw,180px);font-size:12px}.service-picker{align-items:stretch;flex-direction:column}.service-add-btn{width:100%}}
 
 .time-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .time-btn{padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px;font-family:var(--font-head);color:var(--muted);cursor:pointer}
