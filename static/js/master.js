@@ -1220,6 +1220,40 @@ function escapeHtml(v){
     return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch];
   });
 }
+function ensureAboutAppUi(){
+  const topbar=document.querySelector(".topbar");
+  if(!topbar||document.getElementById("aboutAppButton"))return;
+  // Older cached master pages carried a PWA label in the header. The Android
+  // build number belongs in the dedicated About dialog instead.
+  Array.from(topbar.children).forEach(function(el){
+    if(/^\s*PWA\s*V/i.test(el.textContent||""))el.remove();
+  });
+  const button=document.createElement("button");
+  button.id="aboutAppButton";
+  button.className="about-app-btn";
+  button.type="button";
+  button.title="Про програму";
+  button.setAttribute("aria-label","Про програму");
+  button.textContent="ⓘ";
+  const spacer=topbar.querySelector(".spacer");
+  topbar.insertBefore(button,spacer||null);
+  const dialog=document.createElement("div");
+  dialog.id="aboutAppOverlay";
+  dialog.className="about-app-overlay hidden";
+  dialog.innerHTML=`<section class="about-app-card" role="dialog" aria-modal="true" aria-labelledby="aboutAppTitle">
+    <h2 id="aboutAppTitle">Про програму</h2>
+    <p>Salon Board — робочий розклад і записи Body Balance.</p>
+    <p class="about-app-version">Android-версія 0.3.0+4</p>
+    <p>Дані зберігаються на пристрої для швидкого запуску та оновлюються з інтернету у фоні.</p>
+    <button class="about-app-close" type="button">Гаразд</button>
+  </section>`;
+  document.body.appendChild(dialog);
+  function close(){dialog.classList.add("hidden");}
+  button.onclick=function(){dialog.classList.remove("hidden");};
+  dialog.addEventListener("click",function(event){if(event.target===dialog)close();});
+  dialog.querySelector(".about-app-close").onclick=close;
+}
+ensureAboutAppUi();
 ensureClientsDirectoryUi();
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){

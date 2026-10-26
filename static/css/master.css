@@ -5,6 +5,14 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .app{display:flex;flex-direction:column;height:100vh}
 .topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:88px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
 .topbar img{height:48px;width:auto}
+.about-app-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);border-radius:50%;background:var(--surface2);color:var(--muted);font:700 16px var(--font-head);cursor:pointer;flex-shrink:0}
+.about-app-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
+.about-app-overlay{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.58)}
+.about-app-card{width:min(360px,100%);padding:24px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);box-shadow:0 12px 36px rgba(0,0,0,.6)}
+.about-app-card h2{margin:0 0 12px;font:700 18px var(--font-head)}
+.about-app-card p{margin:0 0 8px;color:var(--muted);line-height:1.45}
+.about-app-version{color:var(--accent)!important;font:700 15px var(--font-head)}
+.about-app-close{width:100%;margin-top:12px;padding:10px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);color:#121214;font:700 13px var(--font-head);cursor:pointer}
 .spacer{flex:1}
 .clients-btn{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;cursor:pointer;font-family:var(--font-head);font-size:13px;font-weight:700;color:var(--text)}
 .clients-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
