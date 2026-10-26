@@ -351,13 +351,17 @@ function renderScrollCalendar(){
     mobileScrollTimer=setTimeout(()=>autoPositionVisibleMobileDay(),140);
   };
 
-  // Add FAB
+  // Compact mobile action menu: keep the calendar visible until the user asks
+  // for an action.
   const fab=document.createElement("button");
   fab.id="calFab";
   fab.className="cal-fab";
-  fab.textContent="+ Новий запис";
-  fab.onclick=()=>openAddModal(isoDate(periodStart),"10:00");
+  fab.type="button";
+  fab.setAttribute("aria-label","Додати");
+  fab.textContent="+";
+  fab.onclick=toggleMobileQuickActions;
   document.querySelector(".mobile-wrap").appendChild(fab);
+  ensureMobileQuickActions();
   if(keepMobileIso){
     setTimeout(()=>{
       const col=cal.querySelector(`.cal-day-col[data-date="${keepMobileIso}"]`);
@@ -372,6 +376,20 @@ function appointmentCountLabel(count){
   const mod10=count%10,mod100=count%100;
   const word=mod10===1&&mod100!==11?"запис":(mod10>=2&&mod10<=4&&(mod100<12||mod100>14)?"записи":"записів");
   return `${count} ${word}`;
+}
+function ensureMobileQuickActions(){
+  if(document.getElementById("calQuickActions"))return;
+  const actions=document.createElement("div");
+  actions.id="calQuickActions";
+  actions.className="cal-quick-actions hidden";
+  actions.innerHTML='<button class="cal-quick-action primary" type="button">+ Новий запис</button><button class="cal-quick-action" type="button">⚖ Вимірювання</button>';
+  document.querySelector(".mobile-wrap").appendChild(actions);
+  actions.querySelector(".primary").onclick=function(){actions.classList.add("hidden");openAddModal(isoDate(periodStart),"10:00");};
+  actions.querySelectorAll(".cal-quick-action")[1].onclick=function(){window.location.href="/body";};
+}
+function toggleMobileQuickActions(){
+  const actions=document.getElementById("calQuickActions");
+  if(actions)actions.classList.toggle("hidden");
 }
 function autoPositionVisibleMobileDay(){
   if(window.innerWidth>768)return;
@@ -786,19 +804,6 @@ safeClick("detailEditBtn",function(){
   document.getElementById("modalOverlay").classList.remove("hidden");
 });
 function ensureClientsDirectoryUi(){
-  if(!document.getElementById("clientsBtn")){
-    const topbar=document.querySelector(".topbar");
-    const spacer=document.querySelector(".topbar .spacer");
-    if(topbar&&spacer){
-      const btn=document.createElement("button");
-      btn.id="clientsBtn";
-      btn.className="clients-btn";
-      btn.type="button";
-      btn.textContent="👥 Клієнти";
-      btn.onclick=openClientsModal;
-      topbar.insertBefore(btn,spacer.nextSibling);
-    }
-  }
   if(!document.getElementById("clientsOverlay")){
     const overlay=document.createElement("div");
     overlay.id="clientsOverlay";
@@ -1221,22 +1226,7 @@ function escapeHtml(v){
   });
 }
 function ensureAboutAppUi(){
-  const topbar=document.querySelector(".topbar");
-  if(!topbar||document.getElementById("aboutAppButton"))return;
-  // Older cached master pages carried a PWA label in the header. The Android
-  // build number belongs in the dedicated About dialog instead.
-  Array.from(topbar.children).forEach(function(el){
-    if(/^\s*PWA\s*V/i.test(el.textContent||""))el.remove();
-  });
-  const button=document.createElement("button");
-  button.id="aboutAppButton";
-  button.className="about-app-btn";
-  button.type="button";
-  button.title="Про програму";
-  button.setAttribute("aria-label","Про програму");
-  button.textContent="ⓘ";
-  const spacer=topbar.querySelector(".spacer");
-  topbar.insertBefore(button,spacer||null);
+  if(document.getElementById("aboutAppOverlay"))return;
   const dialog=document.createElement("div");
   dialog.id="aboutAppOverlay";
   dialog.className="about-app-overlay hidden";
@@ -1249,9 +1239,12 @@ function ensureAboutAppUi(){
   </section>`;
   document.body.appendChild(dialog);
   function close(){dialog.classList.add("hidden");}
-  button.onclick=function(){dialog.classList.remove("hidden");};
   dialog.addEventListener("click",function(event){if(event.target===dialog)close();});
   dialog.querySelector(".about-app-close").onclick=close;
+}
+function openAboutApp(){
+  const dialog=document.getElementById("aboutAppOverlay");
+  if(dialog)dialog.classList.remove("hidden");
 }
 function applyBrandAssets(){
   const logo=document.querySelector(".topbar img");
@@ -1433,14 +1426,6 @@ function removeSelectedService(id){
 }
 
 function ensureMasterServiceUi(){
-  const topbar=document.querySelector(".topbar");
-  const spacer=document.querySelector(".topbar .spacer");
-  if(topbar&&spacer&&!document.getElementById("servicesBtn")){
-    const button=document.createElement("button");
-    button.id="servicesBtn";button.type="button";button.className="services-btn";button.textContent="⚙ Послуги";
-    button.onclick=openServiceManager;
-    topbar.insertBefore(button,spacer.nextSibling);
-  }
   if(!document.getElementById("serviceManagerOverlay")){
     const overlay=document.createElement("div");
     overlay.id="serviceManagerOverlay";overlay.className="overlay hidden";
@@ -1488,8 +1473,36 @@ async function deleteMasterService(id){
 
 ensureMasterServiceUi();
 
+function ensureMasterMenuUi(){
+  const topbar=document.querySelector(".topbar");
+  const name=document.getElementById("masterNameBadge");
+  if(!topbar||!name||document.getElementById("masterMenuToggle"))return;
+  document.querySelectorAll("#clientsBtn,#servicesBtn,#appVersionBadge,.body-station-shortcut").forEach(function(el){el.remove();});
+  const toggle=document.createElement("button");
+  toggle.id="masterMenuToggle";
+  toggle.className="master-menu-toggle";
+  toggle.type="button";
+  toggle.title="Меню майстра";
+  name.classList.add("master-menu-name");
+  toggle.appendChild(name);
+  topbar.appendChild(toggle);
+  const overlay=document.createElement("div");
+  overlay.id="masterMenuOverlay";
+  overlay.className="master-menu-overlay hidden";
+  overlay.innerHTML='<section class="master-menu-sheet" role="dialog" aria-modal="true" aria-label="Меню майстра"><p class="master-menu-title">Меню</p><button class="master-menu-item" data-action="clients"><span>👥</span>Клієнти</button><button class="master-menu-item" data-action="services"><span>⚙</span>Послуги</button><button class="master-menu-item" data-action="body"><span>⚖</span>Вимірювання</button><button class="master-menu-item" data-action="about"><span>ⓘ</span>Про програму</button></section>';
+  document.body.appendChild(overlay);
+  function close(){overlay.classList.add("hidden");}
+  toggle.onclick=function(){overlay.classList.remove("hidden");};
+  overlay.addEventListener("click",function(event){if(event.target===overlay)close();});
+  overlay.querySelector('[data-action="clients"]').onclick=function(){close();openClientsModal();};
+  overlay.querySelector('[data-action="services"]').onclick=function(){close();openServiceManager();};
+  overlay.querySelector('[data-action="body"]').onclick=function(){window.location.href="/body";};
+  overlay.querySelector('[data-action="about"]').onclick=function(){close();openAboutApp();};
+}
+ensureMasterMenuUi();
 
-(function(){var originalSaveAppt=window.saveAppt;window.saveAppt=async function(){var serviceField=document.getElementById("fService");var chips=Array.from(document.querySelectorAll("#serviceChips .service-chip")).map(function(chip){return chip.firstChild?chip.firstChild.textContent.trim():"";}).filter(Boolean);if(serviceField&&chips.length&&!serviceField.value.trim())serviceField.value=chips.join(" + ");return originalSaveAppt.apply(this,arguments);};var topbar=document.querySelector(".topbar");if(topbar&&!document.getElementById("appVersionBadge")){var badge=document.createElement("span");badge.id="appVersionBadge";badge.className="app-version-badge";badge.textContent="PWA v20";var masterBadge=document.getElementById("masterNameBadge");if(masterBadge&&masterBadge.parentNode)masterBadge.parentNode.insertBefore(badge,masterBadge.nextSibling);else topbar.appendChild(badge);}})();
+
+(function(){var originalSaveAppt=window.saveAppt;window.saveAppt=async function(){var serviceField=document.getElementById("fService");var chips=Array.from(document.querySelectorAll("#serviceChips .service-chip")).map(function(chip){return chip.firstChild?chip.firstChild.textContent.trim():"";}).filter(Boolean);if(serviceField&&chips.length&&!serviceField.value.trim())serviceField.value=chips.join(" + ");return originalSaveAppt.apply(this,arguments);};})();
 
 
 (function(){function syncVisibleServicesBeforeSave(){var serviceField=document.getElementById("fService");var chips=Array.from(document.querySelectorAll("#serviceChips .service-chip")).map(function(chip){return chip.firstChild?chip.firstChild.textContent.trim():"";}).filter(Boolean);if(serviceField&&chips.length)serviceField.value=chips.join(" + ");}document.addEventListener("click",function(event){var button=event.target.closest('button[onclick*="saveAppt"]');if(button)syncVisibleServicesBeforeSave();},true);})();
