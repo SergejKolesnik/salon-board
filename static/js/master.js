@@ -350,38 +350,6 @@ function renderScrollCalendar(){
     clearTimeout(mobileScrollTimer);
     mobileScrollTimer=setTimeout(()=>autoPositionVisibleMobileDay(),140);
   };
-  if(!cal.dataset.horizontalSwipeReady){
-    let swipe=null;
-    cal.addEventListener("touchstart",function(event){
-      const touch=event.touches&&event.touches[0];
-      if(touch)swipe={x:touch.clientX,y:touch.clientY,left:cal.scrollLeft,horizontal:false};
-    },{passive:true});
-    cal.addEventListener("touchmove",function(event){
-      const touch=event.touches&&event.touches[0];
-      if(!swipe||!touch)return;
-      const dx=touch.clientX-swipe.x,dy=touch.clientY-swipe.y;
-      if(Math.abs(dx)>8&&Math.abs(dx)>Math.abs(dy)*1.15){
-        swipe.horizontal=true;
-        event.preventDefault();
-        cal.scrollLeft=swipe.left-dx;
-      }
-    },{passive:false});
-    cal.addEventListener("touchend",function(){
-      if(!swipe)return;
-      if(swipe.horizontal){
-        const first=cal.querySelector(".cal-day-col");
-        const width=first?first.getBoundingClientRect().width:cal.clientWidth/3;
-        if(width>0){
-          const max=Math.max(0,cal.scrollWidth-cal.clientWidth);
-          const left=Math.max(0,Math.min(max,Math.round(cal.scrollLeft/width)*width));
-          cal.scrollTo({left,behavior:"smooth"});
-        }
-      }
-      swipe=null;
-    },{passive:true});
-    cal.addEventListener("touchcancel",function(){swipe=null;},{passive:true});
-    cal.dataset.horizontalSwipeReady="true";
-  }
 
   // Compact mobile action menu: keep the calendar visible until the user asks
   // for an action.

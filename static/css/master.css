@@ -102,9 +102,9 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .status-cancelled{color:var(--danger);background:var(--danger-light);border-color:rgba(248,113,113,.3)}
 .status-no-show{color:#FBBF24;background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.32)}
 .mobile-wrap{display:none;flex-direction:column;flex:1;overflow:hidden}
-.scroll-calendar{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x pan-y}
+.scroll-calendar{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:none;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x pan-y}
 .scroll-calendar::-webkit-scrollbar{display:none}
-.cal-day-col{flex:0 0 calc(100%/3);scroll-snap-align:start;display:flex;flex-direction:column;border-right:1px solid var(--border);min-width:0;touch-action:pan-x pan-y}
+.cal-day-col{flex:0 0 calc(100%/3);display:flex;flex-direction:column;border-right:1px solid var(--border);min-width:0;touch-action:pan-x pan-y}
 .cal-day-col:last-child{border-right:none}
 .cal-day-header{padding:8px 6px;text-align:center;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:2;flex-shrink:0}
 .cal-day-name{font-size:10px;font-weight:700;color:var(--muted);font-family:var(--font-head);text-transform:uppercase;letter-spacing:.5px}
@@ -150,7 +150,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
   .mobile-wrap{min-height:0;overflow:hidden}
   .scroll-calendar{min-height:0;overscroll-behavior-x:contain;overscroll-behavior-y:none}
   .cal-day-col{height:100%;min-height:0}
-  .cal-slots{min-height:0;overscroll-behavior:contain}
+  .cal-slots{min-height:0;overscroll-behavior-x:auto;overscroll-behavior-y:contain}
 }
 @media(max-width:768px){.topbar{justify-content:space-between;gap:8px;padding:0 12px;height:64px}.topbar .spacer{display:none}.topbar img{height:40px}.topbar img.brand-wordmark{width:172px;height:58px}.date-nav{gap:6px;padding:8px 10px}.week-label{font-size:14px;line-height:1.2;text-align:center}.master-menu-toggle{max-width:min(42vw,220px);margin-left:auto;justify-content:flex-end}.body-station-shortcut{display:none!important}.clients-btn,.services-btn,.about-app-btn{display:none!important}}
 @media(max-width:520px){.topbar{gap:6px;padding:0 10px}.topbar img.brand-wordmark{width:158px;height:56px}.master-menu-toggle{max-width:min(40vw,180px);font-size:12px}.service-picker{align-items:stretch;flex-direction:column}.service-add-btn{width:100%}}
