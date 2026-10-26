@@ -1527,7 +1527,7 @@ function ensureMasterMenuUi(){
   const overlay=document.createElement("div");
   overlay.id="masterMenuOverlay";
   overlay.className="master-menu-overlay hidden";
-  overlay.innerHTML='<section class="master-menu-sheet" role="dialog" aria-modal="true" aria-label="Меню майстра"><p class="master-menu-title">Меню</p><button class="master-menu-item" data-action="clients"><span>👥</span>Клієнти</button><button class="master-menu-item" data-action="services"><span>⚙</span>Послуги</button><button class="master-menu-item" data-action="body"><span>⚖</span>Вимірювання</button><button class="master-menu-item" data-action="about"><span>ⓘ</span>Про програму</button></section>';
+  overlay.innerHTML='<section class="master-menu-sheet" role="dialog" aria-modal="true" aria-label="Меню майстра"><p class="master-menu-title">Меню</p><button class="master-menu-item" data-action="clients"><span>👥</span>Клієнти</button><button class="master-menu-item" data-action="services"><span>⚙</span>Послуги</button><button class="master-menu-item" data-action="body"><span>⚖</span>Вимірювання</button><button class="master-menu-item" data-action="about"><span>ⓘ</span>Про програму</button><button class="master-menu-item" data-action="refresh"><span>↻</span>Оновити застосунок</button></section>';
   document.body.appendChild(overlay);
   function close(){overlay.classList.add("hidden");}
   toggle.onclick=function(){overlay.classList.remove("hidden");};
@@ -1536,6 +1536,33 @@ function ensureMasterMenuUi(){
   overlay.querySelector('[data-action="services"]').onclick=function(){close();openServiceManager();};
   overlay.querySelector('[data-action="body"]').onclick=function(){window.location.href="/body";};
   overlay.querySelector('[data-action="about"]').onclick=function(){close();openAboutApp();};
+  overlay.querySelector('[data-action="refresh"]').onclick=function(){close();refreshMasterApp();};
+}
+async function refreshMasterApp(){
+  showToast("Перевіряю оновлення…");
+  try{
+    if("serviceWorker" in navigator){
+      const registration=await navigator.serviceWorker.getRegistration("/");
+      if(registration){
+        await registration.update();
+        const worker=registration.installing||registration.waiting;
+        if(worker&&worker.state!=="activated"){
+          await new Promise(function(resolve){
+            let settled=false;
+            const finish=function(){if(settled)return;settled=true;clearTimeout(timeout);worker.removeEventListener("statechange",onStateChange);resolve();};
+            const onStateChange=function(){if(worker.state==="activated"||worker.state==="redundant")finish();};
+            const timeout=setTimeout(finish,8000);
+            worker.addEventListener("statechange",onStateChange);
+            onStateChange();
+          });
+        }
+      }
+    }
+  }catch(error){
+    console.warn("Не вдалося перевірити оновлення застосунку",error);
+  }
+  showToast("Перезавантажую застосунок…");
+  setTimeout(function(){window.location.reload();},350);
 }
 ensureMasterMenuUi();
 
