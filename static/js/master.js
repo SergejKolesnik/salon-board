@@ -1243,7 +1243,7 @@ function ensureAboutAppUi(){
   dialog.innerHTML=`<section class="about-app-card" role="dialog" aria-modal="true" aria-labelledby="aboutAppTitle">
     <h2 id="aboutAppTitle">Про програму</h2>
     <p>Salon Board — робочий розклад і записи Body Balance.</p>
-    <p class="about-app-version">Android-версія 0.3.0+4</p>
+    <p class="about-app-version">Android-версія 0.3.1+5</p>
     <p>Дані зберігаються на пристрої для швидкого запуску та оновлюються з інтернету у фоні.</p>
     <button class="about-app-close" type="button">Гаразд</button>
   </section>`;
@@ -1253,6 +1253,14 @@ function ensureAboutAppUi(){
   dialog.addEventListener("click",function(event){if(event.target===dialog)close();});
   dialog.querySelector(".about-app-close").onclick=close;
 }
+function applyBrandAssets(){
+  const logo=document.querySelector(".topbar img");
+  if(!logo)return;
+  logo.src="/static/branding/body-balance-wordmark.jpg";
+  logo.alt="Body Balance";
+  logo.classList.add("brand-wordmark");
+}
+applyBrandAssets();
 ensureAboutAppUi();
 ensureClientsDirectoryUi();
 if("serviceWorker" in navigator){

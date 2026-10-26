@@ -5,6 +5,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .app{display:flex;flex-direction:column;height:100vh}
 .topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:88px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
 .topbar img{height:48px;width:auto}
+.topbar img.brand-wordmark{width:200px;height:64px;object-fit:cover;object-position:center 50%}
 .about-app-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);border-radius:50%;background:var(--surface2);color:var(--muted);font:700 16px var(--font-head);cursor:pointer;flex-shrink:0}
 .about-app-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
 .about-app-overlay{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.58)}
@@ -142,7 +143,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
   .cal-day-col{height:100%;min-height:0}
   .cal-slots{min-height:0;overscroll-behavior:contain}
 }
-@media(max-width:520px){.topbar{gap:7px;padding:0 10px;height:72px}.topbar img{height:42px}.clients-btn,.services-btn{padding:7px 8px;font-size:11px}.role-badge{display:none}.modal{padding:18px}.service-picker{align-items:stretch;flex-direction:column}.service-add-btn{width:100%}}
+@media(max-width:520px){.topbar{gap:7px;padding:0 10px;height:72px}.topbar img{height:42px}.topbar img.brand-wordmark{width:142px;height:46px}.clients-btn,.services-btn{padding:7px 8px;font-size:11px}.role-badge{display:none}.modal{padding:18px}.service-picker{align-items:stretch;flex-direction:column}.service-add-btn{width:100%}}
 
 .time-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .time-btn{padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px;font-family:var(--font-head);color:var(--muted);cursor:pointer}
