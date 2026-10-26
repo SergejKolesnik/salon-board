@@ -86,7 +86,7 @@ function hideScheduleStatus(){
 function startScheduleSlowTimer(){
   if(scheduleStatusTimer)clearTimeout(scheduleStatusTimer);
   scheduleStatusTimer=setTimeout(function(){
-    showScheduleStatus("Інтернет повільний, дані завантажуються...");
+    showScheduleStatus("Очікуємо на відповідь сервера…");
   },3000);
 }
 function clearScheduleSlowTimer(){
