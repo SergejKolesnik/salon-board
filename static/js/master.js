@@ -18,6 +18,8 @@ let didInitialMobileFastLoad=false;
 let pendingMobileScrollIso=isoDate(new Date());
 let scheduleStatusTimer=null;
 let mobileScrollTimer=null;
+let backgroundRefreshTimer=null;
+let hasBackgroundRefreshed=false;
 const mobileDaysAutoPositioned=new Set();
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
@@ -90,16 +92,16 @@ function startScheduleSlowTimer(){
 function clearScheduleSlowTimer(){
   if(scheduleStatusTimer){clearTimeout(scheduleStatusTimer);scheduleStatusTimer=null;}
 }
-function fetchJson(url){
-  return fetch(url).then(function(r){
+function fetchJson(url,fresh){
+  return fetch(url,{cache:fresh?"no-store":"default"}).then(function(r){
     if(!r.ok)throw new Error("fetch failed");
     return r.json();
   });
 }
-async function fetchScheduleRange(masterId,from,to){
+async function fetchScheduleRange(masterId,from,to,fresh){
   return Promise.all([
-    fetchJson(`/api/appointments/range?master_id=${masterId}&from_date=${from}&to_date=${to}`),
-    fetchJson(`/api/breaks/range?master_id=${masterId}&from_date=${from}&to_date=${to}`),
+    fetchJson(`/api/appointments/range?master_id=${masterId}&from_date=${from}&to_date=${to}`,fresh),
+    fetchJson(`/api/breaks/range?master_id=${masterId}&from_date=${from}&to_date=${to}`,fresh),
   ]);
 }
 function renderScheduleData(ap,br){
@@ -121,9 +123,17 @@ async function loadExpandedMobileSchedule(){
     showScheduleStatus("Не вдалося завантажити розклад. Спробуйте оновити.",true);
   }
 }
-async function loadWeek(){
-  showScheduleStatus("Завантаження розкладу...");
-  startScheduleSlowTimer();
+function scheduleBackgroundRefresh(){
+  if(hasBackgroundRefreshed||backgroundRefreshTimer)return;
+  backgroundRefreshTimer=setTimeout(function(){
+    backgroundRefreshTimer=null;
+    hasBackgroundRefreshed=true;
+    loadWeek(true);
+  },450);
+}
+async function loadWeek(fresh){
+  fresh=!!fresh;
+  if(!fresh){showScheduleStatus("Завантаження розкладу...");startScheduleSlowTimer();}
   try{
     if(!masterId){
       const me=await fetchJson("/api/me");
@@ -149,7 +159,7 @@ async function loadWeek(){
     const loadStart=isMobile?addDays(periodStart,-1):periodStart;
     const days=Array.from({length:loadDays},(_,i)=>isoDate(addDays(loadStart,i)));
     const from=days[0],to=days[days.length-1];
-    const data=await fetchScheduleRange(masterId,from,to);
+    const data=await fetchScheduleRange(masterId,from,to,fresh);
     renderScheduleData(data[0],data[1]);
     clearScheduleSlowTimer();
     if(useFastMobileLoad){
@@ -159,8 +169,10 @@ async function loadWeek(){
     }else{
       hideScheduleStatus();
     }
+    if(!fresh)scheduleBackgroundRefresh();
   }catch(e){
     clearScheduleSlowTimer();
+    if(fresh){hideScheduleStatus();return;}
     showScheduleStatus("Не вдалося завантажити розклад. Спробуйте оновити.",true);
   }
 }
