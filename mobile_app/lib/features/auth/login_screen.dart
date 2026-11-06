@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/sync/sync_service.dart';
-import '../calendar/calendar_screen.dart';
+import '../pwa/pwa_screen.dart';
 
 /// Starts the single-master mobile app without asking for a password.
 class LoginScreen extends StatefulWidget {
@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _openCalendar() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => CalendarScreen(syncService: widget.syncService),
+        builder: (_) => PwaScreen(apiClient: widget.apiClient),
       ),
     );
   }

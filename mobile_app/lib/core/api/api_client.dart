@@ -5,13 +5,15 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
+  static const baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://salon-board.onrender.com',
+  );
+
   ApiClient()
       : _dio = Dio(
           BaseOptions(
-            baseUrl: const String.fromEnvironment(
-              'API_BASE_URL',
-              defaultValue: 'https://salon-board.onrender.com',
-            ),
+            baseUrl: baseUrl,
             connectTimeout: const Duration(seconds: 12),
             receiveTimeout: const Duration(seconds: 20),
             headers: const {'Content-Type': 'application/json'},
@@ -113,6 +115,9 @@ class ApiClient {
     final cookie = await _loadCookie();
     return cookie != null && cookie.isNotEmpty;
   }
+
+  /// Return the mobile session cookie for the embedded PWA.
+  Future<String?> sessionCookie() => _loadCookie();
 
   Future<void> logout() async {
     final cookie = await _loadCookie();
