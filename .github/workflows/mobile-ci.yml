@@ -30,8 +30,11 @@ jobs:
         run: |
           dart run flutter_launcher_icons
           dart run flutter_native_splash:create
-      - name: Set Android app name
-        run: sed -i 's/android:label="[^"]*"/android:label="Body Balance CRM"/' android/app/src/main/AndroidManifest.xml
+      - name: Configure release Android manifest
+        run: |
+          sed -i 's/android:label="[^"]*"/android:label="Body Balance CRM"/' android/app/src/main/AndroidManifest.xml
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
       - name: Format Dart sources
         run: dart format lib test
       - name: Check formatting
@@ -42,10 +45,12 @@ jobs:
         run: flutter test
       - name: Build release APK
         run: flutter build apk --release --dart-define=API_BASE_URL=https://salon-board.onrender.com
+      - name: Name release APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/body-balance-crm-r${{ github.run_number }}-a${{ github.run_attempt }}.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: body-balance-crm-apk
-          path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+          name: body-balance-crm-r${{ github.run_number }}-a${{ github.run_attempt }}-apk
+          path: mobile_app/build/app/outputs/flutter-apk/body-balance-crm-r${{ github.run_number }}-a${{ github.run_attempt }}.apk
           if-no-files-found: error
 
   backend-contract:
