@@ -22,6 +22,8 @@ jobs:
           cache: true
       - name: Generate Android project files
         run: flutter create --platforms=android .
+      - name: Remove generated placeholder test
+        run: rm -f test/widget_test.dart
       - name: Install Flutter dependencies
         run: flutter pub get
       - name: Format Dart sources

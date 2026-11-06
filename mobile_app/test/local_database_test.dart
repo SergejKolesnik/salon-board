@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-
-import '../lib/core/db/local_database.dart';
+import 'package:salon_board_mobile/core/db/local_database.dart';
 
 void main() {
   late LocalDatabase database;

@@ -195,7 +195,9 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                   displayStringForOption: (option) => option.name,
                   optionsBuilder: (value) {
                     final query = value.text.trim().toLowerCase();
-                    if (query.isEmpty) return const Iterable<ClientOption>.empty();
+                    if (query.isEmpty) {
+                      return const Iterable<ClientOption>.empty();
+                    }
                     return _clients.where((client) =>
                         client.name.toLowerCase().contains(query) ||
                         client.phone.toLowerCase().contains(query));
@@ -312,7 +314,7 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                   },
                 ),
                 DropdownButtonFormField<String>(
-                  value: _statuses.containsKey(_status) ? _status : 'scheduled',
+                  initialValue: _statuses.containsKey(_status) ? _status : 'scheduled',
                   decoration: const InputDecoration(labelText: 'Статус'),
                   items: _statuses.entries
                       .map((entry) => DropdownMenuItem(

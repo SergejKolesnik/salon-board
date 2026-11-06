@@ -485,7 +485,9 @@ class _CalendarScreenState extends State<CalendarScreen>
         ],
       ),
     );
-    if (accepted != true || !mounted) return;
+    if (accepted != true || !mounted) {
+      return;
+    }
     try {
       await widget.apiClient.logout();
     } catch (_) {

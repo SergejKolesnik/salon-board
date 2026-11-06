@@ -111,7 +111,7 @@ class ApiClient {
       unawaited(
         _dio
             .post<void>('/api/logout', options: Options(headers: {'Cookie': cookie}))
-            .catchError((_) {}),
+            .then<void>((_) {}, onError: (Object _) {}),
       );
     }
   }

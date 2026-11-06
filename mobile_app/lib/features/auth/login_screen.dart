@@ -56,7 +56,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final masters = cachedMasters;
     setState(() {
       _masters = masters;
-      if (masters.isNotEmpty) _selectedProfile = 'master:${masters.first['id'] ?? masters.first['server_id']}';
+      if (masters.isNotEmpty) {
+        _selectedProfile = 'master:${masters.first['id'] ?? masters.first['server_id']}';
+      }
       _isInitializing = false;
     });
     unawaited(_refreshMasterList());
@@ -126,7 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 28),
                 DropdownButtonFormField<String>(
-                  value: _selectedProfile,
+                  initialValue: _selectedProfile,
                   decoration: const InputDecoration(
                     labelText: 'Профіль',
                     border: OutlineInputBorder(),
@@ -256,8 +258,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _friendlyError(Object error) {
     final text = error.toString().toLowerCase();
-    if (text.contains('401') || text.contains('невірний пароль')) return 'Невірний пароль або профіль';
-    if (text.contains('зміни профілю')) return error.toString().replaceFirst('Bad state: ', '');
+    if (text.contains('401') || text.contains('невірний пароль')) {
+      return 'Невірний пароль або профіль';
+    }
+    if (text.contains('зміни профілю')) {
+      return error.toString().replaceFirst('Bad state: ', '');
+    }
     return 'Не вдалося увійти. Перевірте мережу та пароль.';
   }
 
