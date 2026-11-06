@@ -1,62 +1,67 @@
-# Salon Board Mobile v2 Prototype
+# Body Balance CRM для Android
 
-Read-only Flutter prototype for the future offline-first Android app.
+Flutter-застосунок для роботи з розкладом косметологічного кабінету. Телефон зберігає календар у SQLite і є швидким робочим інтерфейсом; хмара синхронізує його з вебзастосунком та іншими пристроями.
 
-Android app name: **Body Balance CRM**.
+## Як працює
 
-## What works
+- Застосунок автоматично відкриває профіль єдиного активного майстра й завантажує календар без форми пароля. Перший запуск потребує мережі.
+- Запис, редагування чи блокування спершу атомарно зберігається в SQLite разом із чергою відправлення. Підтвердження в інтерфейсі означає, що дані вже на телефоні.
+- Синхронізація запускається після збереження, відновлення мережі, повернення в застосунок або вручну. Повторне надсилання безпечне; конфлікт версій показується окремо.
+- Неуспішні зміни залишаються на телефоні й відображаються як такі, що потребують уваги. У мобільному застосунку немає виходу чи перемикання профілю.
+- Перший запуск і первинне завантаження потребують мережі. Після цього календар і нові записи доступні офлайн.
 
-- Login through the existing `/api/login` cookie session.
-- Pull sync through `/api/sync/bootstrap`.
-- Local SQLite cache for masters, services, clients, appointments, and breaks.
-- Seven-day calendar screen from cached data.
-- Offline read after the first successful sync.
-- Online/offline indicator and last sync time.
-- Sync diagnostics screen with network state, last sync, app version, local DB size, and cached row counts.
+## Автоматичний мобільний доступ
 
-## Run
+Мобільний endpoint створює сесію лише для одного активного майстра, ніколи для адміністратора. Коли майстрів нуль або більше одного, автоматичний доступ зупиняється.
+
+Це прибирає пароль із APK, але мобільний endpoint є публічним: людина, яка знає адресу сервера, може відкрити розклад і змінювати дані в межах прав цього майстра. Не використовуйте такий режим для кількох майстрів або якщо потрібна приватність від сторонніх користувачів. Вебадмінка й її пароль залишаються захищеними.
+
+## Локальний запуск
+
+Потрібні Flutter stable, Android SDK і Android toolchain.
 
 ```bash
 cd mobile_app
-flutter pub get
 flutter create --platforms=android .
-flutter pub run flutter_launcher_icons
-flutter pub run flutter_native_splash:create
+flutter pub get
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
 powershell -ExecutionPolicy Bypass -File tool/configure_android.ps1
-flutter run --dart-define=API_BASE_URL=https://your-backend.example.com
+flutter run --dart-define=API_BASE_URL=https://salon-board.onrender.com
 ```
 
-Build APK:
+## Перевірки
 
 ```bash
-flutter build apk --release --dart-define=API_BASE_URL=https://your-backend.example.com
+cd mobile_app
+dart format lib test
+flutter analyze --fatal-infos
+flutter test
 ```
 
-Debug APK for testing:
+Python-перевірки контракту API запускаються з кореня репозиторію:
 
 ```bash
-flutter build apk --debug --dart-define=API_BASE_URL=https://your-backend.example.com
+python -m py_compile main.py
+python -m unittest discover -s tests
 ```
 
-The debug APK will be at:
+GitHub Actions виконує перевірки Flutter і Python та збирає APK у кожному PR. APK доступний як артефакт запуску workflow.
 
-```text
-build/app/outputs/flutter-apk/app-debug.apk
-```
-
-Install on Android:
+## Збірка APK
 
 ```bash
-adb install -r build/app/outputs/flutter-apk/app-debug.apk
+cd mobile_app
+flutter create --platforms=android .
+flutter pub get
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+powershell -ExecutionPolicy Bypass -File tool/configure_android.ps1
+flutter build apk --release --dart-define=API_BASE_URL=https://salon-board.onrender.com
 ```
 
-Or copy `app-debug.apk` to the phone, open it from Files, and allow install from unknown apps when Android asks.
+Файл: `mobile_app/build/app/outputs/flutter-apk/app-release.apk`.
 
-Default API URL is `https://salon-board.onrender.com`.
+Збірка CI підписана тимчасовим ключем і призначена для тестової інсталяції. Щоб оновити вже встановлений APK без видалення, потрібен той самий Android package ID та підписний ключ, якими був підписаний старий APK. У цьому репозиторії їх наразі немає. Не видаляйте старий APK, доки не перевірено встановлення/збереження потрібного профілю; старий застосунок не зберігав нових офлайн-записів, тож його кеш можна відновити з хмари після входу.
 
-## Not implemented yet
-
-- Create/edit/delete appointments.
-- Push sync.
-- Conflict resolution.
-- Telegram and finance features.
+За замовчуванням API: `https://salon-board.onrender.com`.

@@ -384,6 +384,7 @@ class SyncPullResponse(BaseModel):
 
 class SyncPushItem(BaseModel):
     local_id: Optional[str] = None
+    mutation_id: Optional[str] = None
     id: Optional[int] = None
     server_id: Optional[int] = None
     original_server_id: Optional[int] = None
@@ -510,7 +511,7 @@ def resolve_services(service_ids: list[int], legacy_name: str = "") -> tuple[lis
     rows = []
     if ids:
         placeholders = ",".join("?" for _ in ids)
-        found = turso(f"SELECT id,name,price_cents,duration_min FROM services WHERE id IN ({placeholders})", ids)
+        found = turso(f"SELECT id,name,price_cents,duration_min FROM services WHERE deleted_at IS NULL AND id IN ({placeholders})", ids)
         by_id = {int(row["id"]): row for row in found}
         missing = [value for value in ids if value not in by_id]
         if missing:
@@ -520,7 +521,7 @@ def resolve_services(service_ids: list[int], legacy_name: str = "") -> tuple[lis
     legacy_name = (legacy_name or "").strip()
     if not legacy_name:
         raise HTTPException(400, "Оберіть хоча б одну послугу")
-    exact = turso("SELECT id,name,price_cents,duration_min FROM services WHERE name=? LIMIT 1", [legacy_name])
+    exact = turso("SELECT id,name,price_cents,duration_min FROM services WHERE name=? AND deleted_at IS NULL LIMIT 1", [legacy_name])
     return (exact, legacy_name)
 
 def replace_appointment_services(appointment_id: int, service_rows: list[dict], legacy_name: str = ""):
@@ -611,7 +612,7 @@ def sync_breaks(where_sql="", params=None, master_id=None):
 
 @app.get("/api/masters")
 def list_masters():
-    rows = turso("SELECT * FROM masters ORDER BY id")
+    rows = turso("SELECT * FROM masters WHERE deleted_at IS NULL ORDER BY id")
     result = []
     for r in rows:
         mid = int(r['id'])
@@ -627,7 +628,10 @@ def list_masters():
 
 @app.post("/api/masters", status_code=201)
 def create_master(m: MasterIn, sess=Depends(require_admin)):
-    rid = turso_exec("INSERT INTO masters (name,color,initials) VALUES (?,?,?)", [m.name, m.color, m.initials])
+    rid = turso_exec(
+        "INSERT INTO masters (name,color,initials,uuid,updated_at,version) VALUES (?,?,?,?,datetime('now'),1)",
+        [m.name, m.color, m.initials, str(uuid_lib.uuid4())],
+    )
     try:
         master_id = int(rid) if rid is not None else None
     except (ValueError, TypeError):
@@ -660,16 +664,28 @@ def update_master(master_id: int, m: MasterIn, sess=Depends(require_admin)):
     rows = turso("SELECT id FROM masters WHERE id=?", [master_id])
     if not rows:
         raise HTTPException(404, "Майстра не знайдено")
-    turso_exec("UPDATE masters SET name=?,color=?,initials=? WHERE id=?", [m.name, m.color, m.initials, master_id])
+    turso_exec(
+        "UPDATE masters SET name=?,color=?,initials=?,updated_at=datetime('now'),version=COALESCE(version,1)+1 WHERE id=?",
+        [m.name, m.color, m.initials, master_id],
+    )
     return {"id": master_id, **m.dict()}
 
 @app.delete("/api/masters/{master_id}")
 def delete_master(master_id: int, sess=Depends(require_admin)):
-    turso_exec("DELETE FROM appointment_services WHERE appointment_id IN (SELECT id FROM appointments WHERE master_id=?)", [master_id])
-    turso_exec("DELETE FROM appointments WHERE master_id=?", [master_id])
-    turso_exec("DELETE FROM breaks WHERE master_id=?", [master_id])
+    timestamp = "datetime('now')"
+    turso_exec(
+        f"UPDATE appointments SET deleted_at={timestamp},updated_at={timestamp},version=COALESCE(version,1)+1,last_mutation_id='' WHERE master_id=? AND deleted_at IS NULL",
+        [master_id],
+    )
+    turso_exec(
+        f"UPDATE breaks SET deleted_at={timestamp},updated_at={timestamp},version=COALESCE(version,1)+1,last_mutation_id='' WHERE master_id=? AND deleted_at IS NULL",
+        [master_id],
+    )
     turso_exec("DELETE FROM master_roles WHERE master_id=?", [master_id])
-    turso_exec("DELETE FROM masters WHERE id=?", [master_id])
+    turso_exec(
+        "UPDATE masters SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1 WHERE id=?",
+        [master_id],
+    )
     return {"ok": True}
 
 # ─── ROLE TEMPLATES ────────────────────────────────────────────────────────────
@@ -734,22 +750,22 @@ def list_appointments(date: str = None, token: str = Cookie(default=None)):
     if sess['role'] == 'admin':
         # Адмін бачить всіх
         if date:
-            rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.appt_date=? ORDER BY a.start_time", [date])
+            rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.appt_date=? AND a.deleted_at IS NULL ORDER BY a.start_time", [date])
         else:
-            rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id ORDER BY a.appt_date, a.start_time")
+            rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.deleted_at IS NULL ORDER BY a.appt_date, a.start_time")
     elif sess['role'] == 'master' and sess['master_id']:
         perms = get_master_perms(sess['master_id'])
         if perms['can_view_all']:
             if date:
-                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.appt_date=? ORDER BY a.start_time", [date])
+                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.appt_date=? AND a.deleted_at IS NULL ORDER BY a.start_time", [date])
             else:
-                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id ORDER BY a.appt_date, a.start_time")
+                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.deleted_at IS NULL ORDER BY a.appt_date, a.start_time")
         else:
             # Бачить тільки своїх
             if date:
-                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date=? ORDER BY a.start_time", [sess['master_id'], date])
+                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.appt_date=? AND a.deleted_at IS NULL ORDER BY a.start_time", [sess['master_id'], date])
             else:
-                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? ORDER BY a.appt_date, a.start_time", [sess['master_id']])
+                rows = turso("SELECT a.*, m.name as master_name, m.color, m.initials FROM appointments a JOIN masters m ON a.master_id=m.id WHERE a.master_id=? AND a.deleted_at IS NULL ORDER BY a.appt_date, a.start_time", [sess['master_id']])
     else:
         rows = []
     return [appointment_response(r) for r in rows]
@@ -840,8 +856,8 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
                 first_name = name_parts[0] if name_parts else a.client_name
                 last_name = name_parts[1] if len(name_parts) > 1 else ''
                 cid = turso_exec(
-                    "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
-                    [first_name, last_name, phone]
+                    "INSERT INTO clients (first_name,last_name,phone,uuid,updated_at,version) VALUES (?,?,?, ?,datetime('now'),1)",
+                    [first_name, last_name, phone, str(uuid_lib.uuid4())]
                 )
                 client_id = int(cid) if cid is not None else None
         else:
@@ -849,14 +865,17 @@ def create_appointment(a: AppointmentIn, token: str = Cookie(default=None)):
             first_name = name_parts[0] if name_parts else a.client_name
             last_name = name_parts[1] if len(name_parts) > 1 else ''
             cid = turso_exec(
-                "INSERT INTO clients (first_name, last_name, phone) VALUES (?,?,?)",
-                [first_name, last_name, '']
+                "INSERT INTO clients (first_name,last_name,phone,uuid,updated_at,version) VALUES (?,?,?, ?,datetime('now'),1)",
+                [first_name, last_name, '', str(uuid_lib.uuid4())]
             )
             client_id = int(cid) if cid is not None else None
     # ─────────────────────────────────────────────────────────────────────
     status = a.status or "scheduled"
-    appointment_id = turso_exec("INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id,status) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    [a.master_id, a.client_name, phone, service_label, a.appt_date, a.start_time, a.duration_min, a.notes, client_id, status])
+    appointment_id = turso_exec(
+        "INSERT INTO appointments (master_id,client_name,phone,service,appt_date,start_time,duration_min,notes,client_id,status,uuid,updated_at,deleted_at,version,last_mutation_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),NULL,1,'')",
+        [a.master_id, a.client_name, phone, service_label, a.appt_date, a.start_time,
+         a.duration_min, a.notes, client_id, status, str(uuid_lib.uuid4())]
+    )
     appointment_id = int(appointment_id) if appointment_id is not None else None
     if appointment_id:
         replace_appointment_services(appointment_id, selected_services, service_label)
@@ -895,7 +914,7 @@ def update_appointment(appt_id: int, a: AppointmentUpdate, token: str = Cookie(d
     else:
         selected_services = appointment_service_rows(appt_id)
     check_appointment_conflicts(int(data["master_id"]), data["appt_date"], data["start_time"], int(data["duration_min"]), appt_id)
-    turso_exec("UPDATE appointments SET client_name=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=?,status=? WHERE id=?",
+    turso_exec("UPDATE appointments SET client_name=?,service=?,appt_date=?,start_time=?,duration_min=?,notes=?,status=?,updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id='' WHERE id=?",
               [data["client_name"], data["service"], data["appt_date"], data["start_time"], data["duration_min"], data["notes"], data["status"], appt_id])
     if service_ids is not None or "service" in update_data:
         replace_appointment_services(appt_id, [
@@ -919,8 +938,10 @@ def delete_appointment(appt_id: int, token: str = Cookie(default=None)):
         perms = get_master_perms(sess['master_id'])
         if not perms['can_edit_others'] and int(existing['master_id']) != sess['master_id']:
             raise HTTPException(403, "Можна видаляти лише свої записи")
-    turso_exec("DELETE FROM appointment_services WHERE appointment_id=?", [appt_id])
-    turso_exec("DELETE FROM appointments WHERE id=?", [appt_id])
+    turso_exec(
+        "UPDATE appointments SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id='' WHERE id=?",
+        [appt_id],
+    )
     return {"ok": True}
 
 @app.get("/api/breaks")
@@ -939,8 +960,11 @@ def create_break(b: BreakIn, token: str = Cookie(default=None)):
     ensure_can_write_master(b.master_id, sess)
     check_break_conflicts(b.master_id, b.break_date, b.start_time, b.end_time)
     label = (b.label or "Зайнято").strip() or "Зайнято"
-    turso_exec("INSERT INTO breaks (master_id,break_date,start_time,end_time,label) VALUES (?,?,?,?,?)",
-               [b.master_id, b.break_date, b.start_time, b.end_time, label])
+    break_uuid = str(uuid_lib.uuid4())
+    turso_exec(
+        "INSERT INTO breaks (master_id,break_date,start_time,end_time,label,uuid,updated_at,deleted_at,version,last_mutation_id) VALUES (?,?,?,?,?,?,datetime('now'),NULL,1,'')",
+        [b.master_id, b.break_date, b.start_time, b.end_time, label, break_uuid],
+    )
     rows = turso("SELECT * FROM breaks WHERE master_id=? AND break_date=? AND start_time=? ORDER BY id DESC LIMIT 1",
                  [b.master_id, b.break_date, b.start_time])
     if not rows:
@@ -960,7 +984,7 @@ def update_break(break_id: int, b: BreakIn, token: str = Cookie(default=None)):
     ensure_can_edit_master(b.master_id, sess)
     check_break_conflicts(b.master_id, b.break_date, b.start_time, b.end_time, break_id)
     label = (b.label or "Зайнято").strip() or "Зайнято"
-    turso_exec("UPDATE breaks SET master_id=?,break_date=?,start_time=?,end_time=?,label=? WHERE id=?",
+    turso_exec("UPDATE breaks SET master_id=?,break_date=?,start_time=?,end_time=?,label=?,updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id='' WHERE id=?",
                [b.master_id, b.break_date, b.start_time, b.end_time, label, break_id])
     rows2 = turso("SELECT * FROM breaks WHERE id=?", [break_id])
     r = rows2[0]
@@ -975,7 +999,10 @@ def delete_break(break_id: int, token: str = Cookie(default=None)):
     if not rows:
         raise HTTPException(404, "Блокування не знайдено")
     ensure_can_edit_master(int(rows[0]["master_id"]), sess)
-    turso_exec("DELETE FROM breaks WHERE id=?", [break_id])
+    turso_exec(
+        "UPDATE breaks SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id='' WHERE id=?",
+        [break_id],
+    )
     return {"ok": True}
 
 @app.get("/api/appointments/range")
@@ -1124,7 +1151,7 @@ def update_client(client_id: int, data: ClientUpdate, token: str = Cookie(defaul
     if not rows:
         raise HTTPException(404, "РљР»С–С”РЅС‚Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ")
     turso_exec(
-        "UPDATE clients SET first_name=?, last_name=?, phone=?, birthday=?, notes=?, updated_at=datetime('now'), version=COALESCE(version,1)+1 WHERE id=?",
+        "UPDATE clients SET first_name=?, last_name=?, phone=?, birthday=?, notes=?, updated_at=datetime('now'), version=COALESCE(version,1)+1,last_mutation_id='' WHERE id=?",
         [data.first_name, data.last_name, normalize_phone(data.phone), data.birthday, data.notes, client_id]
     )
     return {"ok": True, "id": client_id}
@@ -1135,7 +1162,7 @@ def get_client_history(client_id: int, token: str = Cookie(default=None)):
     if not sess:
         raise HTTPException(401, "Не авторизовано")
     rows = turso(
-        "SELECT * FROM appointments WHERE client_id = ? ORDER BY appt_date DESC, start_time DESC",
+        "SELECT * FROM appointments WHERE client_id = ? AND deleted_at IS NULL ORDER BY appt_date DESC, start_time DESC",
         [client_id]
     )
     return [{
@@ -1161,7 +1188,9 @@ def sync_bootstrap(sess=Depends(require_auth)):
 def sync_pull(since: str, sess=Depends(require_auth)):
     since_db = normalize_sync_since(since)
     master_id = sync_visible_master_id(sess)
-    changed = "(updated_at > ? OR deleted_at > ?)"
+    # DB timestamps are second-precision. Inclusive comparison safely replays
+    # the boundary row rather than missing a mutation made in the same second.
+    changed = "(updated_at >= ? OR deleted_at >= ?)"
     params = [since_db, since_db]
     where_changed = f"WHERE {changed}"
     return {
@@ -1189,6 +1218,27 @@ def push_local_key(item: SyncPushItem, fallback: str):
     if item.id is not None:
         return str(item.id)
     return fallback
+
+def push_mutation_id(item: SyncPushItem) -> str:
+    return (item.mutation_id or item.local_id or "").strip()
+
+def check_push_base_version(existing: dict, item: SyncPushItem, entity_name: str):
+    data = item.data or {}
+    if "version" not in data or data.get("version") is None:
+        return
+    try:
+        expected = int(data["version"] or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid base version")
+    current = int(existing.get("version") or 0)
+    if expected != current:
+        raise HTTPException(409, f"{entity_name} змінено на іншому пристрої")
+
+def pushed_server_version(table: str, server_id: int):
+    if table not in ("appointments", "breaks", "clients") or not server_id:
+        return None
+    rows = turso(f"SELECT version FROM {table} WHERE id=?", [server_id])
+    return int(rows[0].get("version") or 0) if rows else None
 
 def ensure_push_client(data: Dict[str, Any]):
     client_id = data.get("client_id")
@@ -1220,6 +1270,10 @@ def push_update_client(item: SyncPushItem, sess: dict):
     rows = turso("SELECT * FROM clients WHERE id=?", [server_id])
     if not rows:
         raise HTTPException(404, "Client not found")
+    mutation_id = push_mutation_id(item)
+    if mutation_id and rows[0].get("last_mutation_id") == mutation_id:
+        return server_id
+    check_push_base_version(rows[0], item, "Клієнта")
     data = {**rows[0], **(item.data or {})}
     turso_exec(
         """UPDATE clients
@@ -1232,7 +1286,7 @@ def push_update_client(item: SyncPushItem, sess: dict):
             normalize_phone(data.get("phone") or ""),
             data.get("birthday") or "",
             data.get("notes") or "",
-            item.local_id or "",
+            mutation_id,
             server_id,
         ],
     )
@@ -1244,6 +1298,13 @@ def push_create_appointment(item: SyncPushItem, sess: dict):
     if not master_id:
         raise HTTPException(400, "master_id is required")
     ensure_can_write_master(master_id, sess)
+    client_uuid = (data.get("uuid") or "").strip()
+    if client_uuid:
+        existing = turso("SELECT id, master_id FROM appointments WHERE uuid=? ORDER BY id LIMIT 1", [client_uuid])
+        if existing:
+            if int(existing[0]["master_id"]) != master_id:
+                raise HTTPException(409, "UUID запису вже використовується")
+            return int(existing[0]["id"])
     duration_min = int(data.get("duration_min") or 60)
     check_appointment_conflicts(master_id, data.get("appt_date"), data.get("start_time"), duration_min)
     selected_services, service_label = resolve_services(data.get("service_ids") or [], data.get("service") or "")
@@ -1264,7 +1325,7 @@ def push_create_appointment(item: SyncPushItem, sess: dict):
             client_id,
             data.get("status") or "scheduled",
             data.get("uuid") or str(uuid_lib.uuid4()),
-            item.local_id or "",
+            push_mutation_id(item),
         ],
     )
     replace_appointment_services(int(rid), selected_services, service_label)
@@ -1279,6 +1340,10 @@ def push_update_appointment(item: SyncPushItem, sess: dict):
         raise HTTPException(404, "Appointment not found")
     existing = rows[0]
     ensure_can_edit_master(int(existing["master_id"]), sess)
+    mutation_id = push_mutation_id(item)
+    if mutation_id and existing.get("last_mutation_id") == mutation_id:
+        return server_id
+    check_push_base_version(existing, item, "Запис")
     data = {**existing, **(item.data or {})}
     master_id = int(data.get("master_id") or existing["master_id"])
     ensure_can_edit_master(master_id, sess)
@@ -1307,7 +1372,7 @@ def push_update_appointment(item: SyncPushItem, sess: dict):
             data.get("notes") or "",
             client_id,
             data.get("status") or "scheduled",
-            item.local_id or "",
+            mutation_id,
             server_id,
         ],
     )
@@ -1323,9 +1388,13 @@ def push_delete_appointment(item: SyncPushItem, sess: dict):
     if not rows:
         return server_id
     ensure_can_edit_master(int(rows[0]["master_id"]), sess)
+    mutation_id = push_mutation_id(item)
+    if mutation_id and rows[0].get("last_mutation_id") == mutation_id:
+        return server_id
+    check_push_base_version(rows[0], item, "Запис")
     turso_exec(
         "UPDATE appointments SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id=? WHERE id=?",
-        [item.local_id or "", server_id],
+        [mutation_id, server_id],
     )
     return server_id
 
@@ -1335,6 +1404,13 @@ def push_create_break(item: SyncPushItem, sess: dict):
     if not master_id:
         raise HTTPException(400, "master_id is required")
     ensure_can_write_master(master_id, sess)
+    client_uuid = (data.get("uuid") or "").strip()
+    if client_uuid:
+        existing = turso("SELECT id, master_id FROM breaks WHERE uuid=? ORDER BY id LIMIT 1", [client_uuid])
+        if existing:
+            if int(existing[0]["master_id"]) != master_id:
+                raise HTTPException(409, "UUID блокування вже використовується")
+            return int(existing[0]["id"])
     check_break_conflicts(master_id, data.get("break_date"), data.get("start_time"), data.get("end_time"))
     rid = turso_exec(
         """INSERT INTO breaks (master_id,break_date,start_time,end_time,label,uuid,updated_at,deleted_at,version,last_mutation_id)
@@ -1346,7 +1422,7 @@ def push_create_break(item: SyncPushItem, sess: dict):
             data.get("end_time"),
             data.get("label") or "Зайнято",
             data.get("uuid") or str(uuid_lib.uuid4()),
-            item.local_id or "",
+            push_mutation_id(item),
         ],
     )
     return int(rid)
@@ -1360,6 +1436,10 @@ def push_update_break(item: SyncPushItem, sess: dict):
         raise HTTPException(404, "Break not found")
     existing = rows[0]
     ensure_can_edit_master(int(existing["master_id"]), sess)
+    mutation_id = push_mutation_id(item)
+    if mutation_id and existing.get("last_mutation_id") == mutation_id:
+        return server_id
+    check_push_base_version(existing, item, "Блокування")
     data = {**existing, **(item.data or {})}
     master_id = int(data.get("master_id") or existing["master_id"])
     ensure_can_edit_master(master_id, sess)
@@ -1375,7 +1455,7 @@ def push_update_break(item: SyncPushItem, sess: dict):
             data.get("start_time"),
             data.get("end_time"),
             data.get("label") or "Зайнято",
-            item.local_id or "",
+            mutation_id,
             server_id,
         ],
     )
@@ -1389,9 +1469,13 @@ def push_delete_break(item: SyncPushItem, sess: dict):
     if not rows:
         return server_id
     ensure_can_edit_master(int(rows[0]["master_id"]), sess)
+    mutation_id = push_mutation_id(item)
+    if mutation_id and rows[0].get("last_mutation_id") == mutation_id:
+        return server_id
+    check_push_base_version(rows[0], item, "Блокування")
     turso_exec(
         "UPDATE breaks SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1,last_mutation_id=? WHERE id=?",
-        [item.local_id or "", server_id],
+        [mutation_id, server_id],
     )
     return server_id
 
@@ -1410,6 +1494,7 @@ def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
             mappings["clients"].append({
                 "local_id": local_id,
                 "server_id": server_id,
+                "server_version": pushed_server_version("clients", server_id),
                 "action": "update",
             })
         except HTTPException as exc:
@@ -1436,6 +1521,7 @@ def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
             mappings["appointments"].append({
                 "local_id": local_id,
                 "server_id": server_id,
+                "server_version": pushed_server_version("appointments", server_id),
                 "action": action,
             })
         except HTTPException as exc:
@@ -1462,6 +1548,7 @@ def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
             mappings["breaks"].append({
                 "local_id": local_id,
                 "server_id": server_id,
+                "server_version": pushed_server_version("breaks", server_id),
                 "action": action,
             })
         except HTTPException as exc:
@@ -1481,7 +1568,7 @@ def sync_push(payload: SyncPushIn, sess=Depends(require_auth)):
 
 @app.get("/api/services")
 def list_services():
-    rows = turso("SELECT * FROM services ORDER BY sort_order, id")
+    rows = turso("SELECT * FROM services WHERE deleted_at IS NULL ORDER BY sort_order, id")
     return [{**r, 'id': int(r['id']), 'sort_order': int(r['sort_order'] or 0)} for r in rows]
 
 @app.get("/api/server-time")
@@ -1556,9 +1643,12 @@ def create_service(s: ServiceIn, sess=Depends(require_service_manager)):
     name = s.name.strip()
     if not name:
         raise HTTPException(400, "Назва послуги не може бути порожньою")
-    if turso("SELECT id FROM services WHERE name=? LIMIT 1", [name]):
+    if turso("SELECT id FROM services WHERE name=? AND deleted_at IS NULL LIMIT 1", [name]):
         raise HTTPException(409, "Така послуга вже існує")
-    rid = turso_exec("INSERT INTO services (name, sort_order, price_cents, duration_min) VALUES (?,?,?,?)", [name, s.sort_order, s.price_cents, s.duration_min])
+    rid = turso_exec(
+        "INSERT INTO services (name,sort_order,price_cents,duration_min,uuid,updated_at,deleted_at,version) VALUES (?,?,?,?,?,datetime('now'),NULL,1)",
+        [name, s.sort_order, s.price_cents, s.duration_min, str(uuid_lib.uuid4())],
+    )
     return {"id": int(rid), "name": name, "sort_order": s.sort_order, "price_cents": s.price_cents, "duration_min": s.duration_min}
 
 @app.put("/api/services/{svc_id}")
@@ -1566,22 +1656,57 @@ def update_service(svc_id: int, s: ServiceIn, sess=Depends(require_service_manag
     name = s.name.strip()
     if not name:
         raise HTTPException(400, "Назва послуги не може бути порожньою")
-    if not turso("SELECT id FROM services WHERE id=?", [svc_id]):
+    if not turso("SELECT id FROM services WHERE id=? AND deleted_at IS NULL", [svc_id]):
         raise HTTPException(404, "Послугу не знайдено")
-    duplicate = turso("SELECT id FROM services WHERE name=? AND id<>? LIMIT 1", [name, svc_id])
+    duplicate = turso("SELECT id FROM services WHERE name=? AND id<>? AND deleted_at IS NULL LIMIT 1", [name, svc_id])
     if duplicate:
         raise HTTPException(409, "Така послуга вже існує")
-    turso_exec("UPDATE services SET name=?, sort_order=?, price_cents=?, duration_min=? WHERE id=?", [name, s.sort_order, s.price_cents, s.duration_min, svc_id])
+    turso_exec("UPDATE services SET name=?,sort_order=?,price_cents=?,duration_min=?,updated_at=datetime('now'),version=COALESCE(version,1)+1 WHERE id=?", [name, s.sort_order, s.price_cents, s.duration_min, svc_id])
     return {"id": svc_id, "name": name, "sort_order": s.sort_order, "price_cents": s.price_cents, "duration_min": s.duration_min}
 
 @app.delete("/api/services/{svc_id}")
 def delete_service(svc_id: int, sess=Depends(require_service_manager)):
-    if not turso("SELECT id FROM services WHERE id=?", [svc_id]):
+    if not turso("SELECT id FROM services WHERE id=? AND deleted_at IS NULL", [svc_id]):
         raise HTTPException(404, "Послугу не знайдено")
-    turso_exec("DELETE FROM services WHERE id=?", [svc_id])
+    turso_exec(
+        "UPDATE services SET deleted_at=datetime('now'),updated_at=datetime('now'),version=COALESCE(version,1)+1 WHERE id=?",
+        [svc_id],
+    )
     return {"ok": True}
 
 # ─── AUTH ──────────────────────────────────────────────────────────────────────
+
+@app.post("/api/mobile/session")
+def mobile_single_master_session(response: Response, token: str = Cookie(default=None)):
+    """Open a master-scoped mobile session when the installation has one master.
+
+    This intentionally removes the password prompt from the single-user APK.
+    It never creates an administrator session and refuses to guess if the
+    account has zero or multiple active masters.
+    """
+    masters = turso("SELECT id FROM masters WHERE deleted_at IS NULL ORDER BY id")
+    if len(masters) != 1:
+        raise HTTPException(503, "Автоматичний вхід доступний лише з одним активним майстром")
+
+    master_id = int(masters[0]["id"])
+    session = get_session(token)
+    if not session or session.get("role") != "master" or session.get("master_id") != master_id:
+        token = create_session("master", master_id)
+
+    response.set_cookie(
+        "token",
+        token,
+        httponly=False,
+        samesite="lax" if DEMO_MODE else "none",
+        max_age=86400 * 30,
+        secure=not DEMO_MODE,
+    )
+    rows = turso("SELECT name FROM masters WHERE id=?", [master_id])
+    return {
+        "role": "master",
+        "master_id": master_id,
+        "name": rows[0]["name"] if rows else "Майстер",
+    }
 
 @app.post("/api/login")
 def login(data: LoginIn, response: Response):

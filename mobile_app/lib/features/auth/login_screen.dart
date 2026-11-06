@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/sync/sync_service.dart';
 import '../calendar/calendar_screen.dart';
 
+/// Starts the single-master mobile app without asking for a password.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     required this.apiClient,
@@ -19,22 +22,80 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _passwordController = TextEditingController();
-  final _masterIdController = TextEditingController();
-  bool _isLoading = false;
+  bool _isOpening = true;
   String? _error;
+  bool _hasLocalCalendar = false;
 
   @override
   void initState() {
     super.initState();
-    widget.syncService.hydrate();
+    unawaited(_open());
   }
 
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    _masterIdController.dispose();
-    super.dispose();
+  Future<void> _open() async {
+    if (!mounted) return;
+    setState(() {
+      _isOpening = true;
+      _error = null;
+    });
+
+    try {
+      await widget.syncService.hydrate();
+      final profile = await widget.syncService.accountProfile();
+      final hasSession = await widget.apiClient.hasSession();
+
+      if (hasSession &&
+          profile['role'] == 'master' &&
+          _asInt(profile['master_id']) != null) {
+        _openCalendar();
+        unawaited(widget.syncService.syncNow());
+        return;
+      }
+
+      final session = await widget.apiClient.openMobileSession();
+      final role = session['role']?.toString() ?? '';
+      final masterId = _asInt(session['master_id']);
+      if (role != 'master' || masterId == null) {
+        throw StateError('Сервер не повернув профіль майстра для мобільного застосунку.');
+      }
+      await widget.syncService.setAccountProfile(role, masterId);
+      if (!mounted) return;
+      _openCalendar();
+      unawaited(widget.syncService.syncNow());
+    } catch (error) {
+      await _openCachedCalendarIfAvailable();
+      if (!mounted || _hasLocalCalendar) return;
+      setState(() {
+        _isOpening = false;
+        _error = _friendlyError(error);
+      });
+    }
+  }
+
+  Future<void> _openCachedCalendarIfAvailable() async {
+    final profile = await widget.syncService.accountProfile();
+    var hasSavedMasterProfile = profile['role'] == 'master' &&
+        _asInt(profile['master_id']) != null;
+    final masters = await widget.syncService.database.loadMasters();
+    final hasCachedMaster = masters.any(
+      (master) => _asInt(master['server_id']) != null,
+    );
+    if (!hasSavedMasterProfile && hasCachedMaster) {
+      final masterId = _asInt(masters.first['server_id']);
+      if (masterId != null) {
+        try {
+          await widget.syncService.setAccountProfile('master', masterId);
+          hasSavedMasterProfile = true;
+        } on StateError {
+          // Preserve the current account and its pending changes.
+        }
+      }
+    }
+
+    _hasLocalCalendar = hasSavedMasterProfile;
+    if (!_hasLocalCalendar || !mounted) return;
+    _openCalendar();
+    unawaited(widget.syncService.syncNow());
   }
 
   @override
@@ -45,60 +106,36 @@ class _LoginScreenState extends State<LoginScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Salon Board Mobile',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
+                  Image.asset(
+                    'assets/branding/splash_logo.png',
+                    height: 92,
+                    fit: BoxFit.contain,
+                    semanticLabel: 'Логотип Body Balance',
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Read-only offline prototype',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 28),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Пароль',
-                      border: OutlineInputBorder(),
+                  const SizedBox(height: 24),
+                  if (_isOpening) ...[
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    const Text('Відкриваємо розклад…'),
+                  ] else ...[
+                    Text(
+                      _error ?? 'Не вдалося відкрити розклад.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _masterIdController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'ID майстра, якщо вхід як майстер',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    FilledButton.icon(
+                      onPressed: _open,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Повторити'),
+                    ),
                   ],
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: _isLoading ? null : _loginAndSync,
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Увійти і синхронізувати'),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed: _isLoading ? null : _openCachedCalendar,
-                    child: const Text('Відкрити кешований календар'),
-                  ),
                 ],
               ),
             ),
@@ -108,36 +145,27 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Future<void> _loginAndSync() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      final masterId = int.tryParse(_masterIdController.text.trim());
-      await widget.apiClient.login(
-        password: _passwordController.text,
-        masterId: masterId,
-      );
-      await widget.syncService.syncNow();
-      if (!mounted) return;
-      _openCalendar();
-    } catch (error) {
-      setState(() => _error = 'Помилка входу: $error');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _openCachedCalendar() {
-    _openCalendar();
-  }
-
   void _openCalendar() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => CalendarScreen(syncService: widget.syncService),
       ),
     );
+  }
+
+  String _friendlyError(Object error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('503') || message.contains('одним активним майстром')) {
+      return 'Автоматичний доступ налаштований для одного активного майстра. Перевірте список майстрів на сервері.';
+    }
+    if (message.contains('connection') || message.contains('timeout')) {
+      return 'Немає зв’язку із сервером. Для першого запуску потрібен інтернет.';
+    }
+    return 'Не вдалося відкрити розклад. Перевірте інтернет і спробуйте ще раз.';
+  }
+
+  int? _asInt(Object? value) {
+    if (value is int) return value;
+    return value == null ? null : int.tryParse(value.toString());
   }
 }
