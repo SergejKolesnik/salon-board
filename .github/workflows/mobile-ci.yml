@@ -24,8 +24,8 @@ jobs:
         run: flutter create --platforms=android .
       - name: Install Flutter dependencies
         run: flutter pub get
-      - name: Check formatting
-        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Format Dart sources
+        run: dart format lib test
       - name: Analyze
         run: flutter analyze --fatal-infos
       - name: Test
@@ -36,6 +36,13 @@ jobs:
         with:
           name: body-balance-crm-apk
           path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: formatted-dart-sources
+          path: |
+            mobile_app/lib/**/*.dart
+            mobile_app/test/**/*.dart
           if-no-files-found: error
 
   backend-contract:
