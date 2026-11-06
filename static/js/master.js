@@ -36,6 +36,32 @@ const APPT_STATUS_CLASSES={
   no_show:"status-no-show"
 };
 
+let nativeRequestId=0;
+const nativeRequests=new Map();
+function nativeCall(action,data){
+  return new Promise(function(resolve,reject){
+    const id=++nativeRequestId;
+    nativeRequests.set(id,{resolve,reject});
+    window.SalonNative.postMessage(JSON.stringify({id,action,data:data||{}}));
+  });
+}
+window.salonNativeResolve=function(reply){
+  const pending=nativeRequests.get(reply.id);
+  if(!pending)return;
+  nativeRequests.delete(reply.id);
+  if(reply.error)pending.reject(new Error(reply.error));
+  else pending.resolve(reply.result);
+};
+window.salonNativeRefresh=function(){loadWeek(true);};
+window.salonNativeSyncStatus=async function(){
+  try{
+    const state=await nativeCall("syncStatus",{});
+    let bar=document.getElementById("nativeSyncStatus");
+    if(!bar){bar=document.createElement("div");bar.id="nativeSyncStatus";bar.style.cssText="position:fixed;z-index:55;left:10px;top:calc(env(safe-area-inset-top) + 8px);padding:6px 10px;border-radius:999px;background:#1e1e22;color:#e4e4e7;font:500 12px Inter,system-ui;pointer-events:none;opacity:.92";document.body.appendChild(bar);}
+    bar.textContent=state.failedCount?"Потрібна увага: "+state.failedCount:state.pendingCount?"Збережено на телефоні · очікує відправлення: "+state.pendingCount:state.isSyncing?"Синхронізуємо…":"Синхронізовано";
+  }catch(_){ }
+};
+
 function setView(n){
   shouldSmartScrollDesktop=true;
   viewDays=n;
@@ -93,16 +119,32 @@ function clearScheduleSlowTimer(){
   if(scheduleStatusTimer){clearTimeout(scheduleStatusTimer);scheduleStatusTimer=null;}
 }
 function fetchJson(url,fresh){
+  if(window.SalonNative){
+    if(url==="/api/me")return nativeCall("me");
+    if(url==="/api/masters")return nativeCall("masters");
+    if(url==="/api/services")return nativeCall("services");
+    if(url==="/api/clients")return nativeCall("clients");
+    if(url.startsWith("/api/clients/search?"))return nativeCall("clients",{query:new URLSearchParams(url.split("?")[1]).get("q")||""});
+  }
   return fetch(url,{cache:fresh?"no-store":"default"}).then(function(r){
     if(!r.ok)throw new Error("fetch failed");
     return r.json();
   });
 }
 async function fetchScheduleRange(masterId,from,to,fresh){
+  if(window.SalonNative){
+    const local=await nativeCall("schedule",{master_id:masterId,from,to});
+    return [local.appointments,local.breaks];
+  }
   return Promise.all([
     fetchJson(`/api/appointments/range?master_id=${masterId}&from_date=${from}&to_date=${to}`,fresh),
     fetchJson(`/api/breaks/range?master_id=${masterId}&from_date=${from}&to_date=${to}`,fresh),
   ]);
+}
+if(window.SalonNative){
+  window.addEventListener("online",function(){nativeCall("syncNow",{}).catch(function(){});});
+  setTimeout(function(){nativeCall("syncNow",{}).catch(function(){});},0);
+  setInterval(function(){window.salonNativeSyncStatus();},2500);
 }
 function renderScheduleData(ap,br){
   appointments=ap;
@@ -692,18 +734,24 @@ async function saveAppt(){
   if(eventType==="break"){
     const start=document.getElementById("fTime").value.slice(0,5);
     const body={master_id:masterId,break_date:document.getElementById("fDate").value,start_time:start,end_time:breakEndTime(start,document.getElementById("fDuration").value),label:(document.getElementById("fBreakLabel")||{value:""}).value.trim()||"Зайнято"};
-    const url=editingBreakId?`/api/breaks/${editingBreakId}`:"/api/breaks";
-    const res=await fetch(url,{method:editingBreakId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
-    const saved=await res.json();
-    const savedBreak=saved&&typeof saved==="object"?(saved.break||saved):null;
+    let savedBreak;
+    if(window.SalonNative){
+      const existing=editingBreakId?breaks.find(x=>String(x.id)===String(editingBreakId)):null;
+      savedBreak=await nativeCall("saveBreak",{body,existing});
+    }else{
+      const url=editingBreakId?`/api/breaks/${editingBreakId}`:"/api/breaks";
+      const res=await fetch(url,{method:editingBreakId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+      const saved=await res.json();
+      savedBreak=saved&&typeof saved==="object"?(saved.break||saved):null;
+    }
     if(savedBreak&&savedBreak.id!=null){
       const index=breaks.findIndex(x=>String(x.id)===String(savedBreak.id));
       if(index>=0)breaks[index]={...breaks[index],...savedBreak};
       else breaks.push(savedBreak);
       renderAll();
     }
-    closeModal();showToast(editingBreakId?"Оновлено":"Збережено");
+    closeModal();showToast(window.SalonNative?"Збережено на телефоні":(editingBreakId?"Оновлено":"Збережено"));
     mobileDay=new Date(body.break_date+"T12:00:00");
     if(window.innerWidth<=768){
       periodStart=new Date(body.break_date+"T12:00:00");
@@ -717,18 +765,24 @@ async function saveAppt(){
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:selectedServiceIds.map(function(id){var service=services.find(function(item){return Number(item.id)===Number(id);});return service?service.name:"";}).filter(Boolean).join(" + ")||document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
   body.service_ids=selectedServiceIds.slice();
   if(!body.client_name||!body.service){alert("Вкажіть ім\u0027я клієнта та хоча б одну процедуру");return;}
-  const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
-  const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
-  const saved=await res.json();
-  const savedAppointment=saved&&typeof saved==="object"?(saved.appointment||saved):null;
+  let savedAppointment;
+  if(window.SalonNative){
+    const existing=editingId?appointments.find(x=>String(x.id)===String(editingId)):null;
+    savedAppointment=await nativeCall("saveAppointment",{body,existing});
+  }else{
+    const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
+    const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+    const saved=await res.json();
+    savedAppointment=saved&&typeof saved==="object"?(saved.appointment||saved):null;
+  }
   if(savedAppointment&&savedAppointment.id!=null){
     const index=appointments.findIndex(x=>String(x.id)===String(savedAppointment.id));
     if(index>=0)appointments[index]={...appointments[index],...savedAppointment};
     else appointments.push(savedAppointment);
     renderAll();
   }
-  closeModal();showToast(editingId?"Оновлено":"Збережено");
+  closeModal();showToast(window.SalonNative?"Збережено на телефоні":(editingId?"Оновлено":"Збережено"));
   mobileDay=new Date(body.appt_date+"T12:00:00");
   if(window.innerWidth<=768){
     periodStart=new Date(body.appt_date+"T12:00:00");
@@ -744,15 +798,25 @@ async function saveAppt(){
 }
 async function deleteAppt(){
   if(!editingId||!confirm("Видалити запис?"))return;
-  await fetch(`/api/appointments/${editingId}`,{method:"DELETE"});
+  if(window.SalonNative){
+    const existing=appointments.find(x=>String(x.id)===String(editingId));
+    if(!existing)return;
+    await nativeCall("deleteAppointment",{existing});
+  }else await fetch(`/api/appointments/${editingId}`,{method:"DELETE"});
   shouldSmartScrollDesktop=false;
   closeModal();showToast("Видалено");await loadWeek();
 }
 async function deleteBreak(id){
   const breakId=id||editingBreakId;
   if(!breakId||!confirm("Видалити блокування?"))return;
-  const res=await fetch(`/api/breaks/${breakId}`,{method:"DELETE"});
-  if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+  if(window.SalonNative){
+    const existing=breaks.find(x=>String(x.id)===String(breakId));
+    if(!existing)return;
+    await nativeCall("deleteBreak",{existing});
+  }else{
+    const res=await fetch(`/api/breaks/${breakId}`,{method:"DELETE"});
+    if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
+  }
   editingBreakId=null;
   shouldSmartScrollDesktop=false;
   closeDetail();closeModal();showToast("Видалено");await loadWeek();
