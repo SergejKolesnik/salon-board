@@ -92,7 +92,9 @@ class _PwaScreenState extends State<PwaScreen> {
       await _setWebSession();
       await _controller?.loadRequest(Uri.parse('${ApiClient.baseUrl}/master'));
     } catch (_) {
-      if (mounted) setState(() => _error = 'Сесію не вдалося поновити. Повторіть спробу.');
+      if (mounted) {
+        setState(() => _error = 'Сесію не вдалося поновити. Повторіть спробу.');
+      }
     } finally {
       _refreshingSession = false;
     }
