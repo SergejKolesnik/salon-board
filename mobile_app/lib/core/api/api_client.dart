@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -36,18 +39,62 @@ class ApiClient {
 
   final Dio _dio;
 
-  Future<void> login({required String password, int? masterId}) async {
-    await _dio.post<Map<String, dynamic>>(
+  Future<Map<String, dynamic>> login({required String password, int? masterId}) async {
+    final response = await _dio.post<Map<String, dynamic>>(
       '/api/login',
       data: {
         'password': password,
         if (masterId != null) 'master_id': masterId,
       },
     );
+    return response.data ?? <String, dynamic>{};
+  }
+
+  Future<List<dynamic>> masters() async {
+    final response = await _dio.get<List<dynamic>>('/api/masters');
+    return response.data ?? const [];
+  }
+
+  Future<Map<String, dynamic>> currentUser() async {
+    final response = await _dio.get<Map<String, dynamic>>('/api/me');
+    return response.data ?? <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> bootstrap() async {
     final response = await _dio.get<Map<String, dynamic>>('/api/sync/bootstrap');
+    return response.data ?? <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> pull(String since) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/sync/pull',
+      queryParameters: {'since': since},
+    );
+    return response.data ?? <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> push(List<Map<String, Object?>> pending) async {
+    final payload = <String, List<Map<String, Object?>>>{
+      'clients': [],
+      'appointments': [],
+      'breaks': [],
+    };
+    for (final item in pending) {
+      final type = item['entity_type']?.toString();
+      if (type == null || !payload.containsKey(type)) continue;
+      final data = jsonDecode(item['data_json']?.toString() ?? '{}');
+      payload[type]!.add({
+        'local_id': item['local_id'],
+        'server_id': item['server_id'],
+        'action': item['action'],
+        'mutation_id': item['mutation_id'],
+        'data': data is Map ? data : <String, Object?>{},
+      });
+    }
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/sync/push',
+      data: payload,
+    );
     return response.data ?? <String, dynamic>{};
   }
 
@@ -57,11 +104,15 @@ class ApiClient {
   }
 
   Future<void> logout() async {
-    try {
-      await _dio.post<void>('/api/logout');
-    } finally {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_sessionCookieKey);
+    final cookie = await _loadCookie();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_sessionCookieKey);
+    if (cookie != null && cookie.isNotEmpty) {
+      unawaited(
+        _dio
+            .post<void>('/api/logout', options: Options(headers: {'Cookie': cookie}))
+            .catchError((_) {}),
+      );
     }
   }
 

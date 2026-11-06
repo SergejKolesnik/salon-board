@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../core/api/api_client.dart';
 import '../core/db/local_database.dart';
@@ -26,10 +29,24 @@ class _SalonBoardMobileAppState extends State<SalonBoardMobileApp> {
   }
 
   @override
+  void dispose() {
+    unawaited(syncService.dispose());
+    unawaited(database.close());
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Body Balance CRM',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('uk'),
+      supportedLocales: const [Locale('uk'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF00C8B4),

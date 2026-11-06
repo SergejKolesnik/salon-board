@@ -20,6 +20,8 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
   int _appointmentsCount = 0;
   int _clientsCount = 0;
   int _breaksCount = 0;
+  int _pendingCount = 0;
+  int _failedCount = 0;
 
   @override
   void initState() {
@@ -36,43 +38,45 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sync diagnostics')),
+      return Scaffold(
+      appBar: AppBar(title: const Text('Діагностика синхронізації')),
       body: ValueListenableBuilder<SyncStatus>(
         valueListenable: widget.syncService.status,
         builder: (context, status, _) {
           final lastSync = status.lastSyncAt == null
-              ? 'never'
-              : DateFormat('yyyy-MM-dd HH:mm:ss').format(
+              ? 'Ще не було'
+              : DateFormat('dd.MM.yyyy HH:mm:ss').format(
                   status.lastSyncAt!.toLocal(),
                 );
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               _DiagnosticTile(
-                label: 'Network',
-                value: status.isOnline ? 'Online' : 'Offline',
+                label: 'Мережа',
+                value: status.isOnline ? 'Є підключення' : 'Офлайн',
               ),
-              _DiagnosticTile(label: 'Last sync', value: lastSync),
-              _DiagnosticTile(label: 'App version', value: _appVersion),
+              _DiagnosticTile(label: 'Остання синхронізація', value: lastSync),
+              _DiagnosticTile(label: 'Версія застосунку', value: _appVersion),
               _DiagnosticTile(
-                label: 'Local DB size',
+                label: 'Розмір локальної бази',
                 value: _formatBytes(_dbSizeBytes),
               ),
               _DiagnosticTile(
-                label: 'Appointments count',
+                label: 'Записів у базі',
                 value: _appointmentsCount.toString(),
               ),
               _DiagnosticTile(
-                label: 'Clients count',
+                label: 'Клієнтів у базі',
                 value: _clientsCount.toString(),
               ),
               _DiagnosticTile(
-                label: 'Breaks count',
+                label: 'Блокувань у базі',
                 value: _breaksCount.toString(),
               ),
+              _DiagnosticTile(label: 'Очікує відправлення', value: '$_pendingCount'),
+              _DiagnosticTile(label: 'Помилок синхронізації', value: '$_failedCount'),
               if (status.error != null)
-                _DiagnosticTile(label: 'Last error', value: status.error!),
+                _DiagnosticTile(label: 'Остання помилка', value: status.error!),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: status.isSyncing
@@ -82,7 +86,7 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
                         await _reload();
                       },
                 icon: const Icon(Icons.sync),
-                label: Text(status.isSyncing ? 'Syncing...' : 'Run sync'),
+                label: Text(status.isSyncing ? 'Синхронізуємо…' : 'Синхронізувати зараз'),
               ),
             ],
           );
@@ -98,6 +102,8 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
     final appointments = await db.countAppointments();
     final clients = await db.countClients();
     final breaks = await db.countBreaks();
+    final pending = await db.pendingCount();
+    final failed = await db.failedCount();
 
     if (!mounted) return;
     setState(() {
@@ -106,6 +112,8 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
       _appointmentsCount = appointments;
       _clientsCount = clients;
       _breaksCount = breaks;
+      _pendingCount = pending;
+      _failedCount = failed;
     });
   }
 

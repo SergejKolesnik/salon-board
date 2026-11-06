@@ -35,7 +35,7 @@ class MultiServiceContractTests(unittest.TestCase):
         self.assertIn('selectClient(Number(client.id),fullName,client.phone||"")', js)
         self.assertNotIn('openAddModal(', js[js.index("async function saveNewClient"):])
         self.assertIn(".add-client-btn", css)
-        self.assertIn('salon-board-shell-v16', worker)
+        self.assertIn('salon-board-shell-v30', worker)
 
     def test_mobile_appointment_actions_client_picker_and_calendar_cues(self):
         js = (ROOT / "static/js/master.js").read_text(encoding="utf-8")
