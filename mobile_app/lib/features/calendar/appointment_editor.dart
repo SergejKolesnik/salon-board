@@ -115,7 +115,9 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
       _services = values[0] as List<ServiceOption>;
       _clients = values[1] as List<ClientOption>;
       _loadingReferences = false;
-      if (_selectedServices.isEmpty && widget.appointment == null && _services.isNotEmpty) {
+      if (_selectedServices.isEmpty &&
+          widget.appointment == null &&
+          _services.isNotEmpty) {
         _selectedServices.add(_services.first.id);
         _updateDurationFromServices();
       }
@@ -208,17 +210,20 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                     _clientId = client.id;
                   },
                   fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-                    if (controller.text.isEmpty && _nameController.text.isNotEmpty) {
+                    if (controller.text.isEmpty &&
+                        _nameController.text.isNotEmpty) {
                       controller.text = _nameController.text;
                     }
                     return TextFormField(
                       controller: controller,
                       focusNode: focusNode,
-                      decoration: const InputDecoration(labelText: 'Ім’я клієнта *'),
+                      decoration:
+                          const InputDecoration(labelText: 'Ім’я клієнта *'),
                       textCapitalization: TextCapitalization.words,
-                      validator: (value) => value == null || value.trim().isEmpty
-                          ? 'Введіть ім’я клієнта'
-                          : null,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                              ? 'Введіть ім’я клієнта'
+                              : null,
                       onChanged: (value) {
                         _nameController.text = value;
                         _clientId = null;
@@ -268,7 +273,8 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                     spacing: 8,
                     children: _services
                         .map((service) => FilterChip(
-                              label: Text('${service.name} · ${service.durationMin} хв'),
+                              label: Text(
+                                  '${service.name} · ${service.durationMin} хв'),
                               selected: _selectedServices.contains(service.id),
                               onSelected: (selected) {
                                 setState(() {
@@ -304,7 +310,8 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                 ),
                 TextFormField(
                   controller: _durationController,
-                  decoration: const InputDecoration(labelText: 'Тривалість, хв *'),
+                  decoration:
+                      const InputDecoration(labelText: 'Тривалість, хв *'),
                   keyboardType: TextInputType.number,
                   validator: (value) {
                     final duration = int.tryParse(value?.trim() ?? '');
@@ -314,7 +321,8 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                   },
                 ),
                 DropdownButtonFormField<String>(
-                  initialValue: _statuses.containsKey(_status) ? _status : 'scheduled',
+                  initialValue:
+                      _statuses.containsKey(_status) ? _status : 'scheduled',
                   decoration: const InputDecoration(labelText: 'Статус'),
                   items: _statuses.entries
                       .map((entry) => DropdownMenuItem(
@@ -322,7 +330,8 @@ class _AppointmentEditorState extends State<AppointmentEditor> {
                             child: Text(entry.value),
                           ))
                       .toList(),
-                  onChanged: (value) => setState(() => _status = value ?? 'scheduled'),
+                  onChanged: (value) =>
+                      setState(() => _status = value ?? 'scheduled'),
                 ),
                 TextFormField(
                   controller: _notesController,

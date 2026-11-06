@@ -23,7 +23,9 @@ void main() {
     await databaseFactory.deleteDatabase(databasePath);
   });
 
-  test('stores a booking locally before sync and removes it from the outbox on ack', () async {
+  test(
+      'stores a booking locally before sync and removes it from the outbox on ack',
+      () async {
     final saved = await database.saveAppointment(
       localId: null,
       serverId: null,
@@ -42,7 +44,8 @@ void main() {
     );
 
     expect(await database.pendingCount(), 1);
-    final local = await database.loadSchedule(DateTime(2026, 11, 6), DateTime(2026, 11, 6));
+    final local = await database.loadSchedule(
+        DateTime(2026, 11, 6), DateTime(2026, 11, 6));
     expect(local.appointments.single.clientName, 'Олена Клієнтка');
     expect(local.appointments.single.isPending, isTrue);
 
@@ -63,12 +66,14 @@ void main() {
     });
 
     expect(await database.pendingCount(), 0);
-    final synced = await database.loadSchedule(DateTime(2026, 11, 6), DateTime(2026, 11, 6));
+    final synced = await database.loadSchedule(
+        DateTime(2026, 11, 6), DateTime(2026, 11, 6));
     expect(synced.appointments.single.serverId, 42);
     expect(synced.appointments.single.isPending, isFalse);
   });
 
-  test('keeps a local edit when bootstrap contains the older server row', () async {
+  test('keeps a local edit when bootstrap contains the older server row',
+      () async {
     final saved = await database.saveAppointment(
       localId: null,
       serverId: null,
@@ -109,13 +114,16 @@ void main() {
       ],
     });
 
-    final local = await database.loadSchedule(DateTime(2026, 11, 6), DateTime(2026, 11, 6));
+    final local = await database.loadSchedule(
+        DateTime(2026, 11, 6), DateTime(2026, 11, 6));
     expect(local.appointments.single.clientName, 'Локальне ім’я');
     expect(local.appointments.single.isPending, isTrue);
     expect(await database.pendingCount(), 1);
   });
 
-  test('records server push failures for the user and excludes them from automatic retries', () async {
+  test(
+      'records server push failures for the user and excludes them from automatic retries',
+      () async {
     final saved = await database.saveAppointment(
       localId: null,
       serverId: null,
@@ -147,22 +155,31 @@ void main() {
     expect(await database.pendingCount(), 1);
     expect(await database.failedCount(), 1);
     expect(await database.pendingChanges(), isEmpty);
-    final local = await database.loadSchedule(DateTime(2026, 11, 6), DateTime(2026, 11, 6));
-    expect(local.appointments.single.syncError, 'Цей час вже зайнятий у майстра');
+    final local = await database.loadSchedule(
+        DateTime(2026, 11, 6), DateTime(2026, 11, 6));
+    expect(
+        local.appointments.single.syncError, 'Цей час вже зайнятий у майстра');
   });
 
-  test('migrates the read-only v1 cache without losing cached appointments', () async {
+  test('migrates the read-only v1 cache without losing cached appointments',
+      () async {
     final db = await databaseFactory.openDatabase(
       databasePath,
       options: OpenDatabaseOptions(
         version: 1,
         onCreate: (db, _) async {
-          await db.execute('CREATE TABLE masters_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, color TEXT, initials TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
-          await db.execute('CREATE TABLE services_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, sort_order INTEGER, updated_at TEXT, deleted_at TEXT, version INTEGER)');
-          await db.execute('CREATE TABLE clients_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, first_name TEXT, last_name TEXT, phone TEXT, birthday TEXT, telegram_chat_id TEXT, notes TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
-          await db.execute('CREATE TABLE appointments_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, master_id INTEGER, client_id INTEGER, client_name TEXT, phone TEXT, service TEXT, appt_date TEXT, start_time TEXT, duration_min INTEGER, notes TEXT, status TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
-          await db.execute('CREATE TABLE breaks_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, master_id INTEGER, break_date TEXT, start_time TEXT, end_time TEXT, label TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
-          await db.execute('CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT)');
+          await db.execute(
+              'CREATE TABLE masters_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, color TEXT, initials TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
+          await db.execute(
+              'CREATE TABLE services_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, sort_order INTEGER, updated_at TEXT, deleted_at TEXT, version INTEGER)');
+          await db.execute(
+              'CREATE TABLE clients_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, first_name TEXT, last_name TEXT, phone TEXT, birthday TEXT, telegram_chat_id TEXT, notes TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
+          await db.execute(
+              'CREATE TABLE appointments_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, master_id INTEGER, client_id INTEGER, client_name TEXT, phone TEXT, service TEXT, appt_date TEXT, start_time TEXT, duration_min INTEGER, notes TEXT, status TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
+          await db.execute(
+              'CREATE TABLE breaks_cache (server_id INTEGER PRIMARY KEY, uuid TEXT, master_id INTEGER, break_date TEXT, start_time TEXT, end_time TEXT, label TEXT, updated_at TEXT, deleted_at TEXT, version INTEGER)');
+          await db.execute(
+              'CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT)');
           await db.insert('appointments_cache', {
             'server_id': 42,
             'uuid': 'appt-42',
@@ -182,7 +199,8 @@ void main() {
     );
     await db.close();
 
-    final migrated = await database.loadSchedule(DateTime(2026, 11, 6), DateTime(2026, 11, 6));
+    final migrated = await database.loadSchedule(
+        DateTime(2026, 11, 6), DateTime(2026, 11, 6));
     expect(migrated.appointments.single.serverId, 42);
     expect(migrated.appointments.single.clientName, 'Збережений запис');
   });

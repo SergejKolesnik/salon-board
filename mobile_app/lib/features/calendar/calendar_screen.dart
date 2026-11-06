@@ -188,7 +188,8 @@ class _CalendarScreenState extends State<CalendarScreen>
                           appointments: appointments
                               .where((item) => item.date == iso)
                               .toList(),
-                          breaks: breaks.where((item) => item.date == iso).toList(),
+                          breaks:
+                              breaks.where((item) => item.date == iso).toList(),
                           onAppointmentTap: _editAppointment,
                           onAppointmentDelete: _deleteAppointment,
                           onBreakTap: _editBreak,
@@ -213,7 +214,8 @@ class _CalendarScreenState extends State<CalendarScreen>
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    setState(() => _weekStart = _weekStart.subtract(const Duration(days: 7)));
+                    setState(() => _weekStart =
+                        _weekStart.subtract(const Duration(days: 7)));
                     _reloadCache();
                   },
                   icon: const Icon(Icons.chevron_left),
@@ -233,7 +235,8 @@ class _CalendarScreenState extends State<CalendarScreen>
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    setState(() => _weekStart = _weekStart.add(const Duration(days: 7)));
+                    setState(() =>
+                        _weekStart = _weekStart.add(const Duration(days: 7)));
                     _reloadCache();
                   },
                   icon: const Icon(Icons.chevron_right),
@@ -269,11 +272,13 @@ class _CalendarScreenState extends State<CalendarScreen>
     if (appointment?.hasServerConflict == true) {
       final choice = await _showConflictDialog();
       if (choice == 'cloud') {
-        await widget.syncService.database.useServerAppointment(appointment!.localId);
+        await widget.syncService.database
+            .useServerAppointment(appointment!.localId);
         await widget.syncService.hydrate();
         await _reloadCache();
       } else if (choice == 'local') {
-        await widget.syncService.database.keepLocalAppointment(appointment!.localId);
+        await widget.syncService.database
+            .keepLocalAppointment(appointment!.localId);
         unawaited(widget.syncService.syncNow());
       }
       return;
@@ -282,7 +287,9 @@ class _CalendarScreenState extends State<CalendarScreen>
       context: context,
       builder: (_) => AppointmentEditor(
         database: widget.syncService.database,
-        initialDate: initialDate ?? DateTime.tryParse(appointment?.date ?? '') ?? DateTime.now(),
+        initialDate: initialDate ??
+            DateTime.tryParse(appointment?.date ?? '') ??
+            DateTime.now(),
         appointment: appointment,
       ),
     );
@@ -335,10 +342,15 @@ class _CalendarScreenState extends State<CalendarScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Видалити запис?'),
-        content: Text('Запис для ${appointment.clientName} буде видалено з календаря.'),
+        content: Text(
+            'Запис для ${appointment.clientName} буде видалено з календаря.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Видалити')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Скасувати')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Видалити')),
         ],
       ),
     );
@@ -373,7 +385,9 @@ class _CalendarScreenState extends State<CalendarScreen>
     final draft = await showDialog<BreakDraft>(
       context: context,
       builder: (_) => BreakEditor(
-        initialDate: initialDate ?? DateTime.tryParse(item?.date ?? '') ?? DateTime.now(),
+        initialDate: initialDate ??
+            DateTime.tryParse(item?.date ?? '') ??
+            DateTime.now(),
         item: item,
       ),
     );
@@ -399,8 +413,12 @@ class _CalendarScreenState extends State<CalendarScreen>
         title: const Text('Видалити блокування?'),
         content: Text('«${item.label}» буде видалено з календаря.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Видалити')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Скасувати')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Видалити')),
         ],
       ),
     );
@@ -418,7 +436,9 @@ class _CalendarScreenState extends State<CalendarScreen>
     final start = _minutes(draft.startTime);
     final end = start + draft.durationMin;
     for (final item in _schedule.appointments) {
-      if (item.masterId != masterId || item.date != draft.date || item.localId == excludedLocalId) {
+      if (item.masterId != masterId ||
+          item.date != draft.date ||
+          item.localId == excludedLocalId) {
         continue;
       }
       final otherStart = _minutes(item.startTime);
@@ -484,8 +504,12 @@ class _CalendarScreenState extends State<CalendarScreen>
             ? 'Є $pending змін, які ще не синхронізовані. Вони залишаться на телефоні й будуть доступні після повторного входу в цей профіль.'
             : 'Локальний календар залишиться на телефоні.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Вийти')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Скасувати')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Вийти')),
         ],
       ),
     );
@@ -511,10 +535,12 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  DateTime _startOfDay(DateTime value) => DateTime(value.year, value.month, value.day);
+  DateTime _startOfDay(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
 
   String _formatDate(DateTime value) => DateFormat('dd.MM').format(value);
 
@@ -563,7 +589,8 @@ class _SyncBanner extends StatelessWidget {
                   if (status.error != null)
                     Text(
                       status.error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
                     ),
                 ],
               ),
@@ -671,14 +698,18 @@ class _AppointmentTile extends StatelessWidget {
         : Theme.of(context).colorScheme.primary;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(item.isPending ? Icons.cloud_upload_outlined : Icons.event_available, color: color),
+      leading: Icon(
+          item.isPending ? Icons.cloud_upload_outlined : Icons.event_available,
+          color: color),
       title: Text('${item.startTime} · ${item.clientName}'),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${item.service} · ${item.durationMin} хв · ${_statusLabel(item.status)}'),
+          Text(
+              '${item.service} · ${item.durationMin} хв · ${_statusLabel(item.status)}'),
           if (item.syncError != null)
-            Text(item.syncError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(item.syncError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ],
       ),
       trailing: IconButton(
@@ -690,17 +721,20 @@ class _AppointmentTile extends StatelessWidget {
     );
   }
 
-  String _statusLabel(String value) => const {
+  String _statusLabel(String value) =>
+      const {
         'scheduled': 'Заплановано',
         'confirmed': 'Підтверджено',
         'completed': 'Виконано',
         'cancelled': 'Скасовано',
         'no_show': 'Не прийшов',
-      }[value] ?? value;
+      }[value] ??
+      value;
 }
 
 class _BreakTile extends StatelessWidget {
-  const _BreakTile({required this.item, required this.onTap, required this.onDelete});
+  const _BreakTile(
+      {required this.item, required this.onTap, required this.onDelete});
 
   final CalendarBreak item;
   final VoidCallback onTap;

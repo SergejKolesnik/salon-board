@@ -39,7 +39,8 @@ class ApiClient {
 
   final Dio _dio;
 
-  Future<Map<String, dynamic>> login({required String password, int? masterId}) async {
+  Future<Map<String, dynamic>> login(
+      {required String password, int? masterId}) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/login',
       data: {
@@ -61,7 +62,8 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> bootstrap() async {
-    final response = await _dio.get<Map<String, dynamic>>('/api/sync/bootstrap');
+    final response =
+        await _dio.get<Map<String, dynamic>>('/api/sync/bootstrap');
     return response.data ?? <String, dynamic>{};
   }
 
@@ -110,7 +112,8 @@ class ApiClient {
     if (cookie != null && cookie.isNotEmpty) {
       unawaited(
         _dio
-            .post<void>('/api/logout', options: Options(headers: {'Cookie': cookie}))
+            .post<void>('/api/logout',
+                options: Options(headers: {'Cookie': cookie}))
             .then<void>((_) {}, onError: (Object _) {}),
       );
     }

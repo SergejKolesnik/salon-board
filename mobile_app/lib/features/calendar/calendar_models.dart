@@ -49,7 +49,9 @@ class CalendarAppointment {
       clientId: _asInt(row['client_id']),
       clientName: (row['client_name'] as String?) ?? '',
       service: (row['service'] as String?) ?? '',
-      serviceIds: decoded is List ? decoded.map(_asInt).whereType<int>().toList() : const [],
+      serviceIds: decoded is List
+          ? decoded.map(_asInt).whereType<int>().toList()
+          : const [],
       date: (row['appt_date'] as String?) ?? '',
       startTime: (row['start_time'] as String?) ?? '',
       durationMin: _asInt(row['duration_min']) ?? 60,

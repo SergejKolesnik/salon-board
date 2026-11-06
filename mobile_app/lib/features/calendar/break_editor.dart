@@ -86,7 +86,8 @@ class _BreakEditorState extends State<BreakEditor> {
     final endMinutes = startMinutes + duration;
     if (endMinutes > 24 * 60) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Зайнятий час не може перейти на наступну добу')),
+        const SnackBar(
+            content: Text('Зайнятий час не може перейти на наступну добу')),
       );
       return;
     }
@@ -97,14 +98,17 @@ class _BreakEditorState extends State<BreakEditor> {
         date: DateFormat('yyyy-MM-dd').format(_date),
         startTime: clock(startMinutes),
         endTime: clock(endMinutes),
-        label: _labelController.text.trim().isEmpty ? 'Зайнято' : _labelController.text.trim(),
+        label: _labelController.text.trim().isEmpty
+            ? 'Зайнято'
+            : _labelController.text.trim(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.item == null ? 'Зайнятий час' : 'Редагувати блокування'),
+        title: Text(
+            widget.item == null ? 'Зайнятий час' : 'Редагувати блокування'),
         content: Form(
           key: _formKey,
           child: Column(
@@ -148,7 +152,9 @@ class _BreakEditorState extends State<BreakEditor> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Скасувати')),
           FilledButton(onPressed: _submit, child: const Text('Зберегти')),
         ],
       );

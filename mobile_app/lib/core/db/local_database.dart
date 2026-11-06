@@ -48,7 +48,8 @@ class LocalDatabase {
         payload['appointments'],
       );
       await _applyRemoteRows(txn, 'breaks', payload['breaks']);
-      await _putMeta(txn, 'last_sync_at', payload['server_time']?.toString() ?? '');
+      await _putMeta(
+          txn, 'last_sync_at', payload['server_time']?.toString() ?? '');
     });
   }
 
@@ -62,7 +63,8 @@ class LocalDatabase {
       await _upsertReferenceRows(txn, 'clients_cache', changes['clients']);
       await _applyRemoteRows(txn, 'appointments', changes['appointments']);
       await _applyRemoteRows(txn, 'breaks', changes['breaks']);
-      await _putMeta(txn, 'last_sync_at', payload['server_time']?.toString() ?? '');
+      await _putMeta(
+          txn, 'last_sync_at', payload['server_time']?.toString() ?? '');
     });
   }
 
@@ -111,7 +113,8 @@ class LocalDatabase {
     final normalized = '%${query.trim()}%';
     final rows = await db.query(
       'clients_cache',
-      where: "deleted_at IS NULL AND (first_name LIKE ? OR last_name LIKE ? OR phone LIKE ?)",
+      where:
+          "deleted_at IS NULL AND (first_name LIKE ? OR last_name LIKE ? OR phone LIKE ?)",
       whereArgs: [normalized, normalized, normalized],
       orderBy: 'first_name, last_name',
     );
@@ -120,7 +123,8 @@ class LocalDatabase {
 
   Future<List<Map<String, Object?>>> loadMasters() async {
     final db = await database;
-    return db.query('masters_cache', where: 'deleted_at IS NULL', orderBy: 'server_id');
+    return db.query('masters_cache',
+        where: 'deleted_at IS NULL', orderBy: 'server_id');
   }
 
   /// Writes a booking and its outbox mutation atomically before the UI confirms.
@@ -175,7 +179,8 @@ class LocalDatabase {
         whereArgs: ['appointments', key],
         limit: 1,
       );
-      final action = isCreate || (pending.isNotEmpty && pending.first['action'] == 'create')
+      final action = isCreate ||
+              (pending.isNotEmpty && pending.first['action'] == 'create')
           ? 'create'
           : 'update';
       final data = <String, Object?>{
@@ -336,7 +341,8 @@ class LocalDatabase {
     final db = await database;
     await db.transaction((txn) async {
       if (item.serverId == null) {
-        await txn.delete('breaks_cache', where: 'local_id=?', whereArgs: [item.localId]);
+        await txn.delete('breaks_cache',
+            where: 'local_id=?', whereArgs: [item.localId]);
         await txn.delete(
           'pending_changes',
           where: 'entity_type=? AND local_id=?',
@@ -508,7 +514,8 @@ class LocalDatabase {
 
   Future<int> pendingCount() async {
     final db = await database;
-    final rows = await db.rawQuery('SELECT COUNT(1) AS count FROM pending_changes');
+    final rows =
+        await db.rawQuery('SELECT COUNT(1) AS count FROM pending_changes');
     return (rows.first['count'] as int?) ?? 0;
   }
 
@@ -538,7 +545,9 @@ class LocalDatabase {
         if (type == null || localId == null) continue;
         await txn.update(
           'pending_changes',
-          {'error_text': error['detail']?.toString() ?? 'Помилка синхронізації'},
+          {
+            'error_text': error['detail']?.toString() ?? 'Помилка синхронізації'
+          },
           where: 'entity_type=? AND local_id=?',
           whereArgs: [entityType, localId],
         );
@@ -555,7 +564,10 @@ class LocalDatabase {
           if (serverId != null) {
             await txn.update(
               '${table}_cache',
-              {'server_id': serverId, if (serverVersion != null) 'version': serverVersion},
+              {
+                'server_id': serverId,
+                if (serverVersion != null) 'version': serverVersion
+              },
               where: 'local_id=?',
               whereArgs: [localId],
             );
@@ -612,7 +624,8 @@ class LocalDatabase {
         ]) {
           await txn.delete(table);
         }
-        await txn.delete('sync_meta', where: 'key=?', whereArgs: ['last_sync_at']);
+        await txn
+            .delete('sync_meta', where: 'key=?', whereArgs: ['last_sync_at']);
       }
       await _putMeta(txn, 'account_scope', scope);
       await _putMeta(txn, 'account_role', role);
@@ -680,11 +693,15 @@ class LocalDatabase {
     await _createMeta(db);
   }
 
-  Future<void> _upgradeSchema(Database db, int oldVersion, int newVersion) async {
+  Future<void> _upgradeSchema(
+      Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE services_cache ADD COLUMN duration_min INTEGER');
-      await db.execute('ALTER TABLE services_cache ADD COLUMN price_cents INTEGER');
-      await db.execute('ALTER TABLE appointments_cache RENAME TO appointments_cache_v1');
+      await db.execute(
+          'ALTER TABLE services_cache ADD COLUMN duration_min INTEGER');
+      await db
+          .execute('ALTER TABLE services_cache ADD COLUMN price_cents INTEGER');
+      await db.execute(
+          'ALTER TABLE appointments_cache RENAME TO appointments_cache_v1');
       await db.execute('ALTER TABLE breaks_cache RENAME TO breaks_cache_v1');
       await _createScheduleTables(db);
       await db.execute('''
@@ -808,7 +825,8 @@ class LocalDatabase {
     for (final row in (input as List? ?? const []).whereType<Map>()) {
       final mapped = _mapReferenceRow(table, row);
       if (mapped['server_id'] == null) continue;
-      await db.insert(table, mapped, conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(table, mapped,
+          conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
@@ -858,7 +876,8 @@ class LocalDatabase {
     }
   }
 
-  Map<String, Object?> _mapReferenceRow(String table, Map<dynamic, dynamic> row) {
+  Map<String, Object?> _mapReferenceRow(
+      String table, Map<dynamic, dynamic> row) {
     final id = _asInt(row['id']);
     switch (table) {
       case 'masters_cache':
@@ -926,7 +945,8 @@ class LocalDatabase {
         'client_name': row['client_name'] ?? '',
         'phone': row['phone'] ?? '',
         'service': row['service'] ?? '',
-        'service_ids': jsonEncode(serviceIds.map(_asInt).whereType<int>().toList()),
+        'service_ids':
+            jsonEncode(serviceIds.map(_asInt).whereType<int>().toList()),
         'appt_date': row['appt_date'],
         'start_time': row['start_time'],
         'duration_min': _asInt(row['duration_min']) ?? 60,

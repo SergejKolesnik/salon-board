@@ -38,7 +38,7 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-      return Scaffold(
+    return Scaffold(
       appBar: AppBar(title: const Text('Діагностика синхронізації')),
       body: ValueListenableBuilder<SyncStatus>(
         valueListenable: widget.syncService.status,
@@ -73,8 +73,10 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
                 label: 'Блокувань у базі',
                 value: _breaksCount.toString(),
               ),
-              _DiagnosticTile(label: 'Очікує відправлення', value: '$_pendingCount'),
-              _DiagnosticTile(label: 'Помилок синхронізації', value: '$_failedCount'),
+              _DiagnosticTile(
+                  label: 'Очікує відправлення', value: '$_pendingCount'),
+              _DiagnosticTile(
+                  label: 'Помилок синхронізації', value: '$_failedCount'),
               if (status.error != null)
                 _DiagnosticTile(label: 'Остання помилка', value: status.error!),
               const SizedBox(height: 16),
@@ -86,7 +88,9 @@ class _SyncDiagnosticsScreenState extends State<SyncDiagnosticsScreen> {
                         await _reload();
                       },
                 icon: const Icon(Icons.sync),
-                label: Text(status.isSyncing ? 'Синхронізуємо…' : 'Синхронізувати зараз'),
+                label: Text(status.isSyncing
+                    ? 'Синхронізуємо…'
+                    : 'Синхронізувати зараз'),
               ),
             ],
           );

@@ -175,7 +175,8 @@ class SyncService {
       );
     } catch (error) {
       final counts = await _readQueueCounts();
-      final isUnauthorized = error is DioException && error.response?.statusCode == 401;
+      final isUnauthorized =
+          error is DioException && error.response?.statusCode == 401;
       status.value = status.value.copyWith(
         isSyncing: false,
         pendingCount: counts.$1,
@@ -210,7 +211,8 @@ class SyncService {
   Future<void> _initConnectivity() async {
     final initial = await _connectivity.checkConnectivity();
     _setConnectivity(initial);
-    _connectivitySub = _connectivity.onConnectivityChanged.listen(_setConnectivity);
+    _connectivitySub =
+        _connectivity.onConnectivityChanged.listen(_setConnectivity);
   }
 
   void _setConnectivity(List<ConnectivityResult> results) {

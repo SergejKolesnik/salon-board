@@ -57,7 +57,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _masters = masters;
       if (masters.isNotEmpty) {
-        _selectedProfile = 'master:${masters.first['id'] ?? masters.first['server_id']}';
+        _selectedProfile =
+            'master:${masters.first['id'] ?? masters.first['server_id']}';
       }
       _isInitializing = false;
     });
@@ -75,7 +76,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() {
         _masters = masters;
-        if (!_userSelectedProfile && _selectedProfile == 'admin' && masters.isNotEmpty) {
+        if (!_userSelectedProfile &&
+            _selectedProfile == 'admin' &&
+            masters.isNotEmpty) {
           _selectedProfile = 'master:${masters.first['id']}';
         }
       });
@@ -113,7 +116,8 @@ class _LoginScreenState extends State<LoginScreen> {
               shrinkWrap: true,
               padding: const EdgeInsets.all(20),
               children: [
-                Icon(Icons.spa_outlined, size: 54, color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.spa_outlined,
+                    size: 54, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 12),
                 Text(
                   'Body Balance CRM',
@@ -134,7 +138,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem(value: 'admin', child: Text('Адміністратор')),
+                    const DropdownMenuItem(
+                        value: 'admin', child: Text('Адміністратор')),
                     ..._masters.map((master) {
                       final id = master['id'] ?? master['server_id'];
                       return DropdownMenuItem(
@@ -160,7 +165,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
@@ -194,8 +201,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     final previousScope = await widget.syncService.database.accountScope();
     final pending = await widget.syncService.database.pendingCount();
-    final requestedScope = _selectedProfile == 'admin' ? 'admin' : _selectedProfile;
-    if (previousScope != null && previousScope != requestedScope && pending > 0) {
+    final requestedScope =
+        _selectedProfile == 'admin' ? 'admin' : _selectedProfile;
+    if (previousScope != null &&
+        previousScope != requestedScope &&
+        pending > 0) {
       setState(() => _error =
           'На телефоні є несинхронізовані зміни профілю $previousScope. Увійдіть у нього й синхронізуйте їх перед зміною профілю.');
       return;
@@ -214,8 +224,11 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       final role = response['role']?.toString() ?? '';
       final actualMasterId = _asInt(response['master_id']);
-      final actualScope = role == 'master' ? 'master:${actualMasterId ?? 0}' : 'admin';
-      if (previousScope != null && previousScope != actualScope && pending > 0) {
+      final actualScope =
+          role == 'master' ? 'master:${actualMasterId ?? 0}' : 'admin';
+      if (previousScope != null &&
+          previousScope != actualScope &&
+          pending > 0) {
         await widget.apiClient.logout();
         throw StateError(
           'Спочатку синхронізуйте зміни профілю $previousScope або увійдіть у нього знову.',
