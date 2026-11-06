@@ -46,7 +46,7 @@ python -m py_compile main.py
 python -m unittest discover -s tests
 ```
 
-GitHub Actions виконує перевірки Flutter і Python та збирає APK у кожному PR. APK доступний як артефакт запуску workflow.
+GitHub Actions виконує перевірки Flutter і Python та збирає APK у кожному PR. APK доступний як артефакт запуску workflow; номер запуску й спроби входить у назву ZIP та APK.
 
 ## Збірка APK
 
