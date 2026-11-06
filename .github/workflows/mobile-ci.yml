@@ -30,8 +30,11 @@ jobs:
         run: |
           dart run flutter_launcher_icons
           dart run flutter_native_splash:create
-      - name: Set Android app name
-        run: sed -i 's/android:label="[^"]*"/android:label="Body Balance CRM"/' android/app/src/main/AndroidManifest.xml
+      - name: Configure release Android manifest
+        run: |
+          sed -i 's/android:label="[^"]*"/android:label="Body Balance CRM"/' android/app/src/main/AndroidManifest.xml
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
       - name: Format Dart sources
         run: dart format lib test
       - name: Check formatting

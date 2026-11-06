@@ -15,5 +15,9 @@ if ($manifest -match 'android:label="[^"]*"') {
     $manifest = $manifest -replace '<application', "<application android:label=`"$AppName`""
 }
 
+if ($manifest -notmatch 'android\.permission\.INTERNET') {
+    $manifest = $manifest.Replace('<application', "<uses-permission android:name=`"android.permission.INTERNET`" />`n    <application")
+}
+
 Set-Content -LiteralPath $manifestPath -Value $manifest -Encoding UTF8
-Write-Host "Android app label set to '$AppName'."
+Write-Host "Android app label set to '$AppName'; Internet permission enabled."
