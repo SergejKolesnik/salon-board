@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _openCalendar() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => PwaScreen(apiClient: widget.apiClient),
+        builder: (_) => PwaScreen(apiClient: widget.apiClient, syncService: widget.syncService),
       ),
     );
   }

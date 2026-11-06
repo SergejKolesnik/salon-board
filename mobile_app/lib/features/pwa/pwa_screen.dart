@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/sync/sync_service.dart';
+import 'pwa_bridge.dart';
 
 /// Shows the existing Body Balance PWA inside the Android application.
 class PwaScreen extends StatefulWidget {
-  const PwaScreen({required this.apiClient, super.key});
+  const PwaScreen({required this.apiClient, required this.syncService, super.key});
 
   final ApiClient apiClient;
+  final SyncService syncService;
 
   @override
   State<PwaScreen> createState() => _PwaScreenState();
@@ -21,11 +25,43 @@ class _PwaScreenState extends State<PwaScreen> {
   String? _error;
   bool _loading = true;
   bool _refreshingSession = false;
+  DateTime? _lastRenderedSync;
 
   @override
   void initState() {
     super.initState();
+    widget.syncService.status.addListener(_onSyncStatusChanged);
     unawaited(_open());
+  }
+
+  @override
+  void dispose() {
+    widget.syncService.status.removeListener(_onSyncStatusChanged);
+    super.dispose();
+  }
+
+  void _onSyncStatusChanged() {
+    final completed = widget.syncService.status.value.lastSyncAt;
+    if (completed == null || completed == _lastRenderedSync) return;
+    _lastRenderedSync = completed;
+    unawaited(_controller?.runJavaScript('window.salonNativeRefresh?.()'));
+    unawaited(_controller?.runJavaScript('window.salonNativeSyncStatus?.()'));
+  }
+
+  Future<void> _handleNativeMessage(JavaScriptMessage message) async {
+    final request = jsonDecode(message.message) as Map<String, dynamic>;
+    final id = request['id'];
+    Map<String, Object?> reply;
+    try {
+      final result = await PwaBridge(widget.syncService).handle(
+        request['action'] as String,
+        Map<String, dynamic>.from(request['data'] as Map? ?? {}),
+      );
+      reply = {'id': id, 'result': result};
+    } catch (error) {
+      reply = {'id': id, 'error': error.toString().replaceFirst('Bad state: ', '')};
+    }
+    await _controller?.runJavaScript('window.salonNativeResolve?.(${jsonEncode(reply)})');
   }
 
   Future<void> _setWebSession() async {
@@ -48,6 +84,9 @@ class _PwaScreenState extends State<PwaScreen> {
       final controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(const Color(0xFF121214))
+        ..addJavaScriptChannel('SalonNative', onMessageReceived: (message) {
+          unawaited(_handleNativeMessage(message));
+        })
         ..setNavigationDelegate(NavigationDelegate(
           onNavigationRequest: (request) {
             if (Uri.tryParse(request.url)?.path == '/login') {
