@@ -128,7 +128,7 @@ class SyncService {
     return future.whenComplete(() => _activeSync = null);
   }
 
-  Future<void> _runSync() async {
+  Future<void> _runSync({bool retriedAfterSessionRefresh = false}) async {
     if (!status.value.isOnline) {
       await _refreshQueueCounts();
       return;
@@ -174,16 +174,37 @@ class SyncService {
         clearError: true,
       );
     } catch (error) {
-      final counts = await _readQueueCounts();
-      final isUnauthorized =
+      var displayError = error;
+      var isUnauthorized =
           error is DioException && error.response?.statusCode == 401;
+      if (isUnauthorized && !retriedAfterSessionRefresh) {
+        try {
+          final session = await _apiClient.openMobileSession();
+          final role = session['role']?.toString() ?? '';
+          final masterId = int.tryParse(session['master_id']?.toString() ?? '');
+          if (role != 'master' || masterId == null) {
+            throw StateError('Не вдалося відновити мобільний доступ.');
+          }
+          await _database.setAccountProfile(role, masterId);
+          await _runSync(retriedAfterSessionRefresh: true);
+          return;
+        } catch (sessionError) {
+          displayError = sessionError;
+          isUnauthorized = false;
+        }
+      }
+      final counts = await _readQueueCounts();
+      final syncErrorMessage = isUnauthorized
+          ? 'Не вдалося відновити мобільний доступ. Локальні зміни збережені.'
+          : displayError is StateError &&
+                  displayError.toString().contains('несинхронізовані')
+              ? displayError.toString().replaceFirst('Bad state: ', '')
+              : 'Не вдалося синхронізувати. Локальні зміни збережені й будуть надіслані пізніше.';
       status.value = status.value.copyWith(
         isSyncing: false,
         pendingCount: counts.$1,
         failedCount: counts.$2,
-        error: isUnauthorized
-            ? 'Сесія завершилася. Увійдіть знову; локальні зміни збережені.'
-            : 'Не вдалося синхронізувати. Локальні зміни збережені й будуть надіслані пізніше.',
+        error: syncErrorMessage,
         clearMessage: true,
       );
     }

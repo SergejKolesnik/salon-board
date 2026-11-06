@@ -3,24 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/api/api_client.dart';
 import '../../core/sync/sync_service.dart';
 import '../../core/sync/sync_status.dart';
-import '../auth/login_screen.dart';
 import '../diagnostics/sync_diagnostics_screen.dart';
 import 'appointment_editor.dart';
 import 'break_editor.dart';
 import 'calendar_models.dart';
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({
-    required this.syncService,
-    required this.apiClient,
-    super.key,
-  });
+  const CalendarScreen({required this.syncService, super.key});
 
   final SyncService syncService;
-  final ApiClient apiClient;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -155,11 +148,6 @@ class _CalendarScreenState extends State<CalendarScreen>
               ),
             ),
             icon: const Icon(Icons.monitor_heart_outlined),
-          ),
-          IconButton(
-            tooltip: 'Вийти',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
           ),
         ],
       ),
@@ -493,45 +481,6 @@ class _CalendarScreenState extends State<CalendarScreen>
           ],
         ),
       );
-
-  Future<void> _logout() async {
-    final pending = widget.syncService.status.value.pendingCount;
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Вийти із застосунку?'),
-        content: Text(pending > 0
-            ? 'Є $pending змін, які ще не синхронізовані. Вони залишаться на телефоні й будуть доступні після повторного входу в цей профіль.'
-            : 'Локальний календар залишиться на телефоні.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Скасувати')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Вийти')),
-        ],
-      ),
-    );
-    if (accepted != true || !mounted) {
-      return;
-    }
-    try {
-      await widget.apiClient.logout();
-    } catch (_) {
-      // The local session is cleared even when the server cannot be reached.
-    }
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => LoginScreen(
-          apiClient: widget.apiClient,
-          syncService: widget.syncService,
-        ),
-      ),
-      (_) => false,
-    );
-  }
 
   void _showMessage(String message) {
     if (!mounted) return;

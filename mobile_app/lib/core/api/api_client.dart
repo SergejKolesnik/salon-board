@@ -51,6 +51,11 @@ class ApiClient {
     return response.data ?? <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> openMobileSession() async {
+    final response = await _dio.post<Map<String, dynamic>>('/api/mobile/session');
+    return response.data ?? <String, dynamic>{};
+  }
+
   Future<List<dynamic>> masters() async {
     final response = await _dio.get<List<dynamic>>('/api/masters');
     return response.data ?? const [];

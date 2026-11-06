@@ -24,6 +24,19 @@ class MobileSyncContractTests(unittest.TestCase):
         self.assertIn("await _database.applyPushResult", sync)
         self.assertIn("Збережено на телефоні", screen)
 
+    def test_mobile_session_is_passwordless_but_master_scoped(self):
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
+        api = (ROOT / "mobile_app/lib/core/api/api_client.dart").read_text(encoding="utf-8")
+        screen = (ROOT / "mobile_app/lib/features/auth/login_screen.dart").read_text(encoding="utf-8")
+        route = source[source.index('@app.post("/api/mobile/session")'):source.index('@app.post("/api/login")')]
+        self.assertIn("WHERE deleted_at IS NULL ORDER BY id", route)
+        self.assertIn("if len(masters) != 1", route)
+        self.assertIn('create_session("master", master_id)', route)
+        self.assertNotIn('create_session("admin"', route)
+        self.assertIn("/api/mobile/session", api)
+        self.assertIn("openMobileSession()", screen)
+        self.assertNotIn("TextField(\n                  controller: _passwordController", screen)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1676,6 +1676,38 @@ def delete_service(svc_id: int, sess=Depends(require_service_manager)):
 
 # ─── AUTH ──────────────────────────────────────────────────────────────────────
 
+@app.post("/api/mobile/session")
+def mobile_single_master_session(response: Response, token: str = Cookie(default=None)):
+    """Open a master-scoped mobile session when the installation has one master.
+
+    This intentionally removes the password prompt from the single-user APK.
+    It never creates an administrator session and refuses to guess if the
+    account has zero or multiple active masters.
+    """
+    masters = turso("SELECT id FROM masters WHERE deleted_at IS NULL ORDER BY id")
+    if len(masters) != 1:
+        raise HTTPException(503, "Автоматичний вхід доступний лише з одним активним майстром")
+
+    master_id = int(masters[0]["id"])
+    session = get_session(token)
+    if not session or session.get("role") != "master" or session.get("master_id") != master_id:
+        token = create_session("master", master_id)
+
+    response.set_cookie(
+        "token",
+        token,
+        httponly=False,
+        samesite="lax" if DEMO_MODE else "none",
+        max_age=86400 * 30,
+        secure=not DEMO_MODE,
+    )
+    rows = turso("SELECT name FROM masters WHERE id=?", [master_id])
+    return {
+        "role": "master",
+        "master_id": master_id,
+        "name": rows[0]["name"] if rows else "Майстер",
+    }
+
 @app.post("/api/login")
 def login(data: LoginIn, response: Response):
     pwd_admin = get_setting("pwd_admin")
