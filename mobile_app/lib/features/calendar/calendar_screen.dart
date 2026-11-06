@@ -422,10 +422,14 @@ class _CalendarScreenState extends State<CalendarScreen>
         continue;
       }
       final otherStart = _minutes(item.startTime);
-      if (start < otherStart + item.durationMin && end > otherStart) return item;
+      if (start < otherStart + item.durationMin && end > otherStart) {
+        return item;
+      }
     }
     for (final item in _schedule.breaks) {
-      if (item.masterId != masterId || item.date != draft.date) continue;
+      if (item.masterId != masterId || item.date != draft.date) {
+        continue;
+      }
       if (start < _minutes(item.endTime) && end > _minutes(item.startTime)) {
         return CalendarAppointment(
           localId: item.localId,
