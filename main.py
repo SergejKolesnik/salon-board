@@ -475,17 +475,35 @@ def appointment_service_rows(appointment_id: int) -> list[dict]:
         "FROM appointment_services WHERE appointment_id=? ORDER BY sort_order, service_name",
         [appointment_id],
     )
-    return [
-        {
-            **row,
-            "appointment_id": int(row["appointment_id"]),
-            "service_id": int(row["service_id"]) if row.get("service_id") not in (None, "") else None,
-            "price_cents": int(row["price_cents"]) if row.get("price_cents") not in (None, "") else None,
-            "duration_min": int(row["duration_min"]) if row.get("duration_min") not in (None, "") else None,
-            "sort_order": int(row.get("sort_order") or 0),
-        }
-        for row in rows
-    ]
+    return [normalize_appointment_service_row(row) for row in rows]
+
+def normalize_appointment_service_row(row: dict) -> dict:
+    """Convert database service values to the appointment API shape."""
+    return {
+        **row,
+        "appointment_id": int(row["appointment_id"]),
+        "service_id": int(row["service_id"]) if row.get("service_id") not in (None, "") else None,
+        "price_cents": int(row["price_cents"]) if row.get("price_cents") not in (None, "") else None,
+        "duration_min": int(row["duration_min"]) if row.get("duration_min") not in (None, "") else None,
+        "sort_order": int(row.get("sort_order") or 0),
+    }
+
+def appointment_services_by_appointment(appointment_ids: list[int]) -> dict[int, list[dict]]:
+    """Load services in bounded batches for a calendar sync response."""
+    result: dict[int, list[dict]] = {}
+    for start in range(0, len(appointment_ids), 250):
+        chunk = appointment_ids[start:start + 250]
+        placeholders = ",".join("?" for _ in chunk)
+        rows = turso(
+            "SELECT appointment_id, service_id, service_name, price_cents, duration_min, sort_order "
+            f"FROM appointment_services WHERE appointment_id IN ({placeholders}) "
+            "ORDER BY appointment_id, sort_order, service_name",
+            chunk,
+        )
+        for row in rows:
+            service = normalize_appointment_service_row(row)
+            result.setdefault(service["appointment_id"], []).append(service)
+    return result
 
 def appointment_response(r: dict) -> dict:
     data = {
@@ -587,10 +605,11 @@ def sync_appointments(where_sql="", params=None, master_id=None):
         values.append(master_id)
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     rows = turso(f"SELECT * FROM appointments {where} ORDER BY appt_date, start_time, id", values)
+    services_by_appointment = appointment_services_by_appointment([int(row["id"]) for row in rows])
     result = []
     for row in rows:
         item = sync_row(row, ["master_id", "duration_min", "client_id"])
-        item["services"] = appointment_service_rows(int(row["id"]))
+        item["services"] = services_by_appointment.get(int(row["id"]), [])
         item["service_ids"] = [s["service_id"] for s in item["services"] if s["service_id"] is not None]
         result.append(item)
     return result
