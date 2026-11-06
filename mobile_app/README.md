@@ -18,6 +18,9 @@ Flutter-застосунок для роботи з розкладом косм�
 cd mobile_app
 flutter create --platforms=android .
 flutter pub get
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+powershell -ExecutionPolicy Bypass -File tool/configure_android.ps1
 flutter run --dart-define=API_BASE_URL=https://salon-board.onrender.com
 ```
 
@@ -45,6 +48,9 @@ GitHub Actions виконує перевірки Flutter і Python та збир
 cd mobile_app
 flutter create --platforms=android .
 flutter pub get
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+powershell -ExecutionPolicy Bypass -File tool/configure_android.ps1
 flutter build apk --release --dart-define=API_BASE_URL=https://salon-board.onrender.com
 ```
 

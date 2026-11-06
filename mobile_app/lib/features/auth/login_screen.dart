@@ -23,9 +23,11 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   List<Map<String, Object?>> _masters = const [];
-  String _selectedProfile = 'admin';
+  String? _selectedProfile;
   bool _isLoading = false;
   bool _isInitializing = true;
+  bool _mastersLoaded = false;
+  bool _mastersLoadFailed = false;
   bool _userSelectedProfile = false;
   String? _error;
 
@@ -59,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (masters.isNotEmpty) {
         _selectedProfile =
             'master:${masters.first['id'] ?? masters.first['server_id']}';
+        _mastersLoaded = true;
       }
       _isInitializing = false;
     });
@@ -76,14 +79,26 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() {
         _masters = masters;
-        if (!_userSelectedProfile &&
-            _selectedProfile == 'admin' &&
-            masters.isNotEmpty) {
-          _selectedProfile = 'master:${masters.first['id']}';
+        _mastersLoaded = true;
+        _mastersLoadFailed = false;
+        if (!_userSelectedProfile && _selectedProfile == null) {
+          _selectedProfile = masters.isNotEmpty
+              ? 'master:${masters.first['id'] ?? masters.first['server_id']}'
+              : 'admin';
         }
       });
     } catch (_) {
-      // Cached masters keep the login form usable without a network.
+      if (!mounted) return;
+      setState(() {
+        _mastersLoaded = true;
+        _mastersLoadFailed = true;
+        if (!_userSelectedProfile &&
+            _selectedProfile == null &&
+            _masters.isNotEmpty) {
+          _selectedProfile =
+              'master:${_masters.first['id'] ?? _masters.first['server_id']}';
+        }
+      });
     }
   }
 
@@ -116,8 +131,14 @@ class _LoginScreenState extends State<LoginScreen> {
               shrinkWrap: true,
               padding: const EdgeInsets.all(20),
               children: [
-                Icon(Icons.spa_outlined,
-                    size: 54, color: Theme.of(context).colorScheme.primary),
+                Center(
+                  child: Image.asset(
+                    'assets/branding/splash_logo.png',
+                    height: 92,
+                    fit: BoxFit.contain,
+                    semanticLabel: 'Логотип Body Balance',
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   'Body Balance CRM',
@@ -126,20 +147,30 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Розклад зберігається на телефоні й синхронізується з хмарою за наявності мережі.',
+                  'Оберіть свій профіль, потім введіть відповідний пароль.',
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 28),
                 DropdownButtonFormField<String>(
+                  key: ValueKey(_selectedProfile),
                   initialValue: _selectedProfile,
                   decoration: const InputDecoration(
                     labelText: 'Профіль',
                     border: OutlineInputBorder(),
                   ),
+                  hint: Text(
+                    _mastersLoaded ? 'Оберіть профіль' : 'Завантажуємо профілі…',
+                  ),
                   items: [
                     const DropdownMenuItem(
                         value: 'admin', child: Text('Адміністратор')),
+                    if (!_mastersLoaded && _masters.isEmpty)
+                      const DropdownMenuItem<String>(
+                        value: '__loading__',
+                        enabled: false,
+                        child: Text('Майстри з’являться після завантаження'),
+                      ),
                     ..._masters.map((master) {
                       final id = master['id'] ?? master['server_id'];
                       return DropdownMenuItem(
@@ -150,9 +181,30 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                   onChanged: (value) => setState(() {
                     _userSelectedProfile = true;
-                    _selectedProfile = value ?? 'admin';
+                    _selectedProfile = value;
                   }),
                 ),
+                if (!_mastersLoaded) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(minHeight: 2),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Завантажуємо профілі майстрів із сервера. Дочекайтеся імені Оксани, щоб увійти як майстер.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ] else if (_mastersLoadFailed) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Не вдалося завантажити профілі майстрів. Перевірте мережу й повторіть спробу.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    textAlign: TextAlign.center,
+                  ),
+                  TextButton(
+                    onPressed: _refreshMasterList,
+                    child: const Text('Оновити список профілів'),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: _passwordController,
@@ -171,7 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
-                  onPressed: _isLoading ? null : _loginAndOpen,
+                  onPressed: _isLoading || _selectedProfile == null
+                      ? null
+                      : _loginAndOpen,
                   child: _isLoading
                       ? const SizedBox(
                           width: 18,
@@ -194,6 +248,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loginAndOpen() async {
+    if (_selectedProfile == null) {
+      setState(() => _error = 'Спочатку оберіть профіль: адміністратора або Оксану.');
+      return;
+    }
     final password = _passwordController.text;
     if (password.isEmpty) {
       setState(() => _error = 'Введіть пароль');
@@ -202,7 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final previousScope = await widget.syncService.database.accountScope();
     final pending = await widget.syncService.database.pendingCount();
     final requestedScope =
-        _selectedProfile == 'admin' ? 'admin' : _selectedProfile;
+        _selectedProfile == 'admin' ? 'admin' : _selectedProfile!;
     if (previousScope != null &&
         previousScope != requestedScope &&
         pending > 0) {
@@ -215,8 +273,9 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      final masterId = _selectedProfile.startsWith('master:')
-          ? int.tryParse(_selectedProfile.substring('master:'.length))
+      final selectedProfile = _selectedProfile!;
+      final masterId = selectedProfile.startsWith('master:')
+          ? int.tryParse(selectedProfile.substring('master:'.length))
           : null;
       final response = await widget.apiClient.login(
         password: password,
@@ -249,8 +308,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _openCachedCalendar() async {
     final profile = await widget.syncService.accountProfile();
-    if ((profile['role'] as String? ?? '').isEmpty && _masters.isNotEmpty) {
-      final masterId = int.tryParse(_selectedProfile.split(':').last);
+    if ((profile['role'] as String? ?? '').isEmpty &&
+        _masters.isNotEmpty &&
+        _selectedProfile?.startsWith('master:') == true) {
+      final masterId = int.tryParse(_selectedProfile!.split(':').last);
       await widget.syncService.setAccountProfile('master', masterId);
     }
     if (!mounted) return;
