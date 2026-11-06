@@ -52,7 +52,11 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> openMobileSession() async {
-    final response = await _dio.post<Map<String, dynamic>>('/api/mobile/session');
+    // Render may need to start the server after an idle period.
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/mobile/session',
+      options: Options(receiveTimeout: const Duration(seconds: 60)),
+    );
     return response.data ?? <String, dynamic>{};
   }
 
