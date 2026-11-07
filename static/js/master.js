@@ -51,6 +51,7 @@ function setView(n){
   loadWeek();
 }
 function changePeriod(d){shouldSmartScrollDesktop=true;periodStart=addDays(periodStart,d*viewDays);weekStart=new Date(periodStart);mobileDay=new Date(periodStart);pendingMobileScrollIso=isoDate(periodStart);loadWeek();}
+function isMobileViewport(){return window.innerWidth<=768||('ontouchstart' in window&&window.innerWidth<=1024);}
 function getMonday(d){const r=new Date(d),day=r.getDay(),diff=r.getDate()-day+(day===0?-6:1);r.setDate(diff);r.setHours(0,0,0,0);return r;}
 function isoDate(d){const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,"0"),dy=String(d.getDate()).padStart(2,"0");return y+"-"+mo+"-"+dy;}
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
@@ -153,7 +154,7 @@ async function loadWeek(fresh){
       if(btn) btn.innerHTML="&#128197; "+days[now.getDay()]+", "+now.getDate()+" "+months[now.getMonth()];
     })();
     if(!services.length){services=await fetchJson("/api/services");updateDatalist();}
-    const isMobile=window.innerWidth<=640;
+    const isMobile=isMobileViewport();
     const useFastMobileLoad=isMobile&&!didInitialMobileFastLoad;
     const loadDays=useFastMobileLoad?3:(isMobile?14:viewDays);
     const loadStart=isMobile?addDays(periodStart,-1):periodStart;
@@ -274,7 +275,7 @@ function renderGrid(days,today){
   }
 }
 function scrollDesktopToRelevantTime(days){
-  if(!shouldSmartScrollDesktop||window.innerWidth<=768)return;
+  if(!shouldSmartScrollDesktop||isMobileViewport())return;
   const wrap=document.querySelector(".week-wrap");
   if(!wrap)return;
   const visibleDates=days.map(d=>isoDate(d));
@@ -394,7 +395,7 @@ function toggleMobileQuickActions(){
   if(actions)actions.classList.toggle("hidden");
 }
 function autoPositionVisibleMobileDay(){
-  if(window.innerWidth>768)return;
+  if(!isMobileViewport())return;
   const cal=document.getElementById("scrollCal");
   if(!cal)return;
   const calRect=cal.getBoundingClientRect();
@@ -406,7 +407,7 @@ function autoPositionVisibleMobileDay(){
   if(closest)scrollMobileToRelevantTime(closest.dataset.date,false,false);
 }
 function scrollMobileToRelevantTime(targetIso,force,alignHorizontal){
-  if(window.innerWidth>768)return;
+  if(!isMobileViewport())return;
   if(!force&&mobileDaysAutoPositioned.has(targetIso))return;
   const cal=document.getElementById("scrollCal");
   if(!cal||!targetIso)return;
@@ -578,7 +579,7 @@ function openAddModal(date,time){
   document.getElementById("modalOverlay").classList.remove("hidden");
   // Auto-focus makes mobile browsers scroll a fixed dialog beneath the status
   // bar and opens the client picker immediately. Let the user tap the field.
-  if(!window.matchMedia("(max-width: 640px)").matches){
+  if(!isMobileViewport()){
     setTimeout(()=>document.getElementById("fClient").focus(),100);
   }
 }
@@ -610,6 +611,7 @@ if(!selectedServiceIds.length){const legacy=services.find(function(s){return s.n
 renderServicePicker();
 document.getElementById("fDate").value=a.appt_date;
 document.getElementById("fTime").value=a.start_time;
+buildTimeGrid();updateTimeBtns();
 document.getElementById("fDuration").value=a.duration_min;
 document.getElementById("fNotes").value=a.notes||"";
 var fs=document.getElementById("fStatus");if(fs)fs.value=statusValue(a.status);
@@ -705,7 +707,7 @@ async function saveAppt(){
     }
     closeModal();showToast(editingBreakId?"Оновлено":"Збережено");
     mobileDay=new Date(body.break_date+"T12:00:00");
-    if(window.innerWidth<=768){
+    if(isMobileViewport()){
       periodStart=new Date(body.break_date+"T12:00:00");
       weekStart=new Date(periodStart);
       pendingMobileScrollIso=body.break_date;
@@ -730,7 +732,7 @@ async function saveAppt(){
   }
   closeModal();showToast(editingId?"Оновлено":"Збережено");
   mobileDay=new Date(body.appt_date+"T12:00:00");
-  if(window.innerWidth<=768){
+  if(isMobileViewport()){
     periodStart=new Date(body.appt_date+"T12:00:00");
     weekStart=new Date(periodStart);
     pendingMobileScrollIso=body.appt_date;
@@ -760,7 +762,7 @@ async function deleteBreak(id){
 function showToast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2500);}
 // Force mobile layout check
 function applyLayout(){
-  const isMobile=window.innerWidth<=768||('ontouchstart' in window&&window.innerWidth<=1024);
+  const isMobile=isMobileViewport();
   document.querySelector(".content").style.display=isMobile?"none":"";
   document.querySelector(".mobile-wrap").style.display=isMobile?"flex":"none";
 }
@@ -773,7 +775,10 @@ window.addEventListener("resize",applyLayout);
 function buildTimeGrid(){
   var grid=document.getElementById("timeGrid");
   if(!grid)return;
-  var times=["09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
+  var times=[];
+  for(var minutes=9*60;minutes<=18*60;minutes+=15){
+    times.push(String(Math.floor(minutes/60)).padStart(2,"0")+":"+String(minutes%60).padStart(2,"0"));
+  }
   grid.innerHTML=times.map(function(t){return '<button type="button" class="time-btn" onclick="selectTime(\'' + t + '\')">'+t+'</button>';}).join("");
 }
 function selectTime(t){
@@ -803,6 +808,7 @@ safeClick("detailEditBtn",function(){
   renderServicePicker();
   document.getElementById("fDate").value=a.appt_date;
   document.getElementById("fTime").value=a.start_time;
+  buildTimeGrid();updateTimeBtns();
   document.getElementById("fDuration").value=a.duration_min;
   document.getElementById("fNotes").value=a.notes||"";
   var fs=document.getElementById("fStatus");if(fs)fs.value=statusValue(a.status);
@@ -903,6 +909,15 @@ function firstContactValue(value){
   return Array.isArray(value)?String(value[0]||"").trim():String(value||"").trim();
 }
 async function requestPhoneContact(){
+  if(window.SalonContacts&&typeof window.SalonContacts.postMessage==="function"){
+    return new Promise(function(resolve){
+      const eventName="salon-contact-selected";
+      const onSelected=function(event){window.removeEventListener(eventName,onSelected);const contact=event.detail||null;if(contact&&contact.error){alert("Не вдалося відкрити контакти телефону");resolve(null);}else resolve(contact);};
+      window.addEventListener(eventName,onSelected,{once:true});
+      try{window.SalonContacts.postMessage("pickPhoneContact");}
+      catch(error){window.removeEventListener(eventName,onSelected);resolve(null);}
+    });
+  }
   if(!contactPickerSupported()){
     alert("Телефонна книга недоступна в цьому браузері. Відкрийте сайт salon-board.onrender.com у Google Chrome на Android.");
     return null;
@@ -1030,7 +1045,7 @@ function openNewClientModal(){
   };
   Object.keys(values).forEach(function(id){const el=document.getElementById(id);if(el)el.value=values[id];});
   document.getElementById("newClientOverlay").classList.remove("hidden");
-  if(window.innerWidth>640){
+  if(!isMobileViewport()){
     setTimeout(function(){const first=document.getElementById("cc_new_first_name");if(first)first.focus();},50);
   }
 }
@@ -1239,7 +1254,7 @@ function ensureAboutAppUi(){
   dialog.innerHTML=`<section class="about-app-card" role="dialog" aria-modal="true" aria-labelledby="aboutAppTitle">
     <h2 id="aboutAppTitle">Про програму</h2>
     <p>Salon Board — робочий розклад і записи Body Balance.</p>
-    <p class="about-app-version">Android-версія 0.3.1+5</p>
+    <p class="about-app-version">Android-версія 0.3.1+6</p>
     <p>Дані зберігаються на пристрої для швидкого запуску та оновлюються з інтернету у фоні.</p>
     <button class="about-app-close" type="button">Гаразд</button>
   </section>`;
@@ -1259,13 +1274,32 @@ function applyBrandAssets(){
   logo.alt="Body Balance";
   logo.classList.add("brand-wordmark");
 }
+function prepareWebViewTimeInput(){
+  if(!window.SalonContacts)return;
+  const input=document.getElementById("fTime");
+  if(!input)return;
+  input.type="text";
+  input.readOnly=true;
+  input.inputMode="none";
+  input.setAttribute("aria-label","Оберіть час зі списку нижче");
+  input.title="Оберіть один із доступних часів у списку нижче";
+}
 applyBrandAssets();
+prepareWebViewTimeInput();
 ensureAboutAppUi();
 ensureClientsDirectoryUi();
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
     navigator.serviceWorker.register("/static/sw.js",{scope:"/"}).catch(function(){});
   });
+}
+// On phones, begin the horizontally scrolling calendar at today's date. The
+// desktop week view continues to start on Monday.
+if(isMobileViewport()){
+  periodStart=new Date();
+  periodStart.setHours(0,0,0,0);
+  mobileDay=new Date(periodStart);
+  pendingMobileScrollIso=isoDate(periodStart);
 }
 loadWeek();
 // ─── CRM Stage 3: client autocomplete ─────────────────────────────────────
