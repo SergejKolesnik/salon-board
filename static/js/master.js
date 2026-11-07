@@ -573,10 +573,51 @@ function goToday(){
   loadWeek();
 }
 function openDatePicker(){
-  const dp=document.getElementById("datePicker");
-  dp.value=isoDate(periodStart);
-  try{dp.showPicker();}catch(e){dp.click();}
+  ensureDateCalendarPicker();
+  const selected=new Date(periodStart);
+  dateCalendarMonth=new Date(selected.getFullYear(),selected.getMonth(),1);
+  document.getElementById("dateCalendarOverlay").classList.remove("hidden");
+  renderDateCalendarPicker();
 }
+function disableNativeCalendarInput(){const input=document.getElementById("datePicker");if(input){input.style.display="none";input.tabIndex=-1;input.disabled=true;}}
+let dateCalendarMonth=new Date();
+function ensureDateCalendarPicker(){
+  if(document.getElementById("dateCalendarOverlay"))return;
+  const overlay=document.createElement("div");
+  overlay.id="dateCalendarOverlay";
+  overlay.className="hidden";
+  overlay.innerHTML='<section class="date-calendar-card" role="dialog" aria-modal="true" aria-labelledby="dateCalendarTitle"><header class="date-calendar-header"><button type="button" class="date-calendar-nav" data-month="-1" aria-label="Попередній місяць">‹</button><h2 id="dateCalendarTitle"></h2><button type="button" class="date-calendar-nav" data-month="1" aria-label="Наступний місяць">›</button></header><div class="date-calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="date-calendar-days"></div><footer class="date-calendar-footer"><button type="button" class="date-calendar-today">Сьогодні</button><button type="button" class="date-calendar-close">Закрити</button></footer></section>';
+  const style=document.createElement("style");
+  style.textContent='#dateCalendarOverlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.68)}#dateCalendarOverlay.hidden{display:none}.date-calendar-card{width:min(100%,390px);padding:18px;border:1px solid var(--border);border-radius:18px;background:var(--surface);color:var(--text);box-shadow:0 18px 55px rgba(0,0,0,.45)}.date-calendar-header{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;gap:8px;margin-bottom:16px}.date-calendar-header h2{margin:0;text-align:center;text-transform:capitalize;font-size:21px}.date-calendar-nav,.date-calendar-footer button{min-height:42px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text);font-size:22px;cursor:pointer}.date-calendar-weekdays,.date-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center}.date-calendar-weekdays{margin-bottom:6px;color:var(--muted);font-size:13px;font-weight:700}.date-calendar-weekdays span{padding:7px 0}.date-calendar-day{aspect-ratio:1;border:0;border-radius:50%;background:transparent;color:var(--text);font-size:16px;cursor:pointer}.date-calendar-day.outside{color:var(--muted);opacity:.55}.date-calendar-day.today{outline:1px solid var(--accent)}.date-calendar-day.selected{background:var(--accent);color:#111;font-weight:800}.date-calendar-footer{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.date-calendar-footer button{font-size:15px;font-weight:700}.date-calendar-footer .date-calendar-today{border-color:var(--accent);color:var(--accent)}';
+  document.head.appendChild(style);
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll("[data-month]").forEach(function(button){button.onclick=function(){dateCalendarMonth.setMonth(dateCalendarMonth.getMonth()+Number(button.dataset.month));renderDateCalendarPicker();};});
+  overlay.querySelector(".date-calendar-today").onclick=function(){closeDateCalendarPicker();goToDate(isoDate(new Date()));};
+  overlay.querySelector(".date-calendar-close").onclick=closeDateCalendarPicker;
+  overlay.addEventListener("click",function(event){if(event.target===overlay)closeDateCalendarPicker();});
+  overlay.querySelector(".date-calendar-days").onclick=function(event){const button=event.target.closest("[data-date]");if(!button)return;const date=button.dataset.date;closeDateCalendarPicker();goToDate(date);};
+  document.addEventListener("keydown",function(event){if(event.key==="Escape")closeDateCalendarPicker();});
+}
+function renderDateCalendarPicker(){
+  const overlay=document.getElementById("dateCalendarOverlay");
+  if(!overlay)return;
+  const year=dateCalendarMonth.getFullYear(),month=dateCalendarMonth.getMonth();
+  overlay.querySelector("#dateCalendarTitle").textContent=new Intl.DateTimeFormat("uk-UA",{month:"long",year:"numeric"}).format(dateCalendarMonth);
+  const first=new Date(year,month,1);
+  const offset=(first.getDay()+6)%7;
+  const start=new Date(year,month,1-offset);
+  const selected=isoDate(periodStart),today=isoDate(new Date());
+  overlay.querySelector(".date-calendar-days").innerHTML=Array.from({length:42},function(_,index){
+    const date=new Date(start);date.setDate(start.getDate()+index);
+    const iso=isoDate(date);
+    const classes=["date-calendar-day"];
+    if(date.getMonth()!==month)classes.push("outside");
+    if(iso===today)classes.push("today");
+    if(iso===selected)classes.push("selected");
+    return '<button type="button" class="'+classes.join(" ")+'" data-date="'+iso+'" aria-label="'+iso+'">'+date.getDate()+'</button>';
+  }).join("");
+}
+function closeDateCalendarPicker(){const overlay=document.getElementById("dateCalendarOverlay");if(overlay)overlay.classList.add("hidden");}
 function goToDate(iso){
   if(!iso)return;
   shouldSmartScrollDesktop=true;
@@ -1394,6 +1435,7 @@ function prepareWebViewTimeInput(){
   input.title="Оберіть один із доступних часів у списку нижче";
 }
 applyBrandAssets();
+disableNativeCalendarInput();
 prepareWebViewTimeInput();
 ensureAboutAppUi();
 ensureClientsDirectoryUi();
