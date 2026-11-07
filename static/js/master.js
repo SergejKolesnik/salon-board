@@ -20,6 +20,11 @@ let scheduleStatusTimer=null;
 let mobileScrollTimer=null;
 let backgroundRefreshTimer=null;
 let hasBackgroundRefreshed=false;
+let hasLocalScheduleData=false;
+let scheduleSyncInFlight=false;
+let scheduleSyncRetryTimer=null;
+const LOCAL_SCHEDULE_CACHE_KEY="salon-board-local-schedule-v1";
+const PENDING_SCHEDULE_MUTATIONS_KEY="salon-board-pending-schedule-v1";
 const mobileDaysAutoPositioned=new Set();
 const APPT_STATUS_LABELS={
   scheduled:"\u0417\u0430\u043f\u043b\u0430\u043d\u043e\u0432\u0430\u043d\u043e",
@@ -106,9 +111,105 @@ async function fetchScheduleRange(masterId,from,to,fresh){
   ]);
 }
 function renderScheduleData(ap,br){
-  appointments=ap;
-  breaks=br;
+  const pending=readPendingScheduleMutations();
+  appointments=mergePendingScheduleRows(ap,pending,"appointment");
+  breaks=mergePendingScheduleRows(br,pending,"break");
+  persistLocalScheduleCache();
   renderAll();
+}
+function readPendingScheduleMutations(){
+  try{const rows=JSON.parse(localStorage.getItem(PENDING_SCHEDULE_MUTATIONS_KEY)||"[]");return Array.isArray(rows)?rows:[];}catch(error){return [];}
+}
+function writePendingScheduleMutations(rows){
+  try{localStorage.setItem(PENDING_SCHEDULE_MUTATIONS_KEY,JSON.stringify(rows));}catch(error){console.warn("Could not save pending schedule changes locally",error);}
+}
+function persistLocalScheduleCache(){
+  if(!masterId)return;
+  try{localStorage.setItem(LOCAL_SCHEDULE_CACHE_KEY,JSON.stringify({masterId:masterId,appointments:appointments,breaks:breaks,updatedAt:Date.now()}));}catch(error){console.warn("Could not cache schedule locally",error);}
+}
+function mergePendingScheduleRows(rows,pending,type){
+  const result=rows.slice();
+  pending.filter(function(item){return item.entity===type;}).forEach(function(item){
+    const localId=item.localId;
+    let index=result.findIndex(function(row){return String(row.id)===String(localId)||String(row.id)===String(item.targetId);});
+    const localRow=Object.assign({},item.localRow||{},item.body||{}, {id:localId});
+    if(index>=0)result[index]=Object.assign({},result[index],localRow);
+    else result.push(localRow);
+  });
+  return result;
+}
+function upsertLocalScheduleRow(entity,row){
+  const list=entity==="appointment"?appointments:breaks;
+  const index=list.findIndex(function(item){return String(item.id)===String(row.id);});
+  if(index>=0)list[index]=Object.assign({},list[index],row);else list.push(row);
+  persistLocalScheduleCache();
+  renderAll();
+}
+function queueScheduleMutation(entity,method,url,body,targetId){
+  const localId=targetId==null?"local-"+Date.now()+"-"+Math.random().toString(36).slice(2,8):String(targetId);
+  const current=entity==="appointment"?appointments:breaks;
+  const existing=current.find(function(row){return String(row.id)===String(targetId);});
+  const localRow=Object.assign({},existing||{},body,{id:localId});
+  const pending=readPendingScheduleMutations();
+  const queuedCreate=targetId!=null&&pending.find(function(item){return item.entity===entity&&item.localId===String(targetId)&&item.method==="POST";});
+  const prior=queuedCreate||pending.find(function(item){return item.entity===entity&&String(item.targetId)===String(targetId);});
+  const mutation={entity:entity,method:prior&&prior.method==="POST"?"POST":method,url:prior&&prior.method==="POST"?prior.url:url,body:body,targetId:targetId==null?null:String(targetId),localId:prior?prior.localId:localId,localRow:localRow,createdAt:prior?prior.createdAt:Date.now()};
+  const filtered=pending.filter(function(item){return item!==prior;});
+  filtered.push(mutation);
+  writePendingScheduleMutations(filtered);
+  upsertLocalScheduleRow(entity,localRow);
+  return mutation;
+}
+function showSaveConfirmation(isEdit){
+  let overlay=document.getElementById("saveConfirmationOverlay");
+  if(!overlay){
+    overlay=document.createElement("div");
+    overlay.id="saveConfirmationOverlay";
+    overlay.innerHTML='<section class="save-confirmation-card" role="alertdialog" aria-modal="true" aria-labelledby="saveConfirmationTitle"><h2 id="saveConfirmationTitle"></h2><p class="save-confirmation-local">Запис збережено на телефоні.</p><p class="save-confirmation-sync">Синхронізація з сервером виконується у фоні…</p><button type="button" class="save-confirmation-close">Гаразд</button></section>';
+    document.body.appendChild(overlay);
+    const style=document.createElement("style");
+    style.textContent='#saveConfirmationOverlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.68)}.save-confirmation-card{width:min(100%,440px);padding:26px;border:1px solid var(--border);border-radius:20px;background:var(--surface);box-shadow:0 18px 55px rgba(0,0,0,.45);color:var(--text)}.save-confirmation-card h2{margin:0 0 14px;font-size:24px}.save-confirmation-card p{margin:8px 0;color:var(--muted);line-height:1.45}.save-confirmation-card .save-confirmation-local{color:var(--accent);font-weight:700}.save-confirmation-close{width:100%;margin-top:18px;padding:13px;border:0;border-radius:12px;background:var(--accent);color:#111;font-size:17px;font-weight:700}';
+    document.head.appendChild(style);
+    overlay.querySelector(".save-confirmation-close").onclick=function(){overlay.remove();};
+    overlay.addEventListener("click",function(event){if(event.target===overlay)overlay.remove();});
+  }
+  overlay.querySelector("h2").textContent=isEdit?"Зміни збережено":"Запис збережено";
+  overlay.querySelector(".save-confirmation-sync").textContent="Синхронізація з сервером виконується у фоні…";
+}
+function updateSaveConfirmationSync(message){
+  const el=document.querySelector("#saveConfirmationOverlay .save-confirmation-sync");
+  if(el)el.textContent=message;
+}
+async function syncPendingScheduleMutations(){
+  if(scheduleSyncInFlight||!navigator.onLine)return;
+  scheduleSyncInFlight=true;
+  try{
+    let pending=readPendingScheduleMutations();
+    while(pending.length){
+      const mutation=pending[0];
+      let response;
+      try{response=await fetch(mutation.url,{method:mutation.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(mutation.body)});}catch(error){updateSaveConfirmationSync("Збережено на телефоні. Синхронізуємо, щойно з’явиться зв’язок.");if(navigator.onLine)retryPendingScheduleSync();return;}
+      if(!response.ok){updateSaveConfirmationSync("Збережено на телефоні. Сервер тимчасово не прийняв зміни — повторимо спробу.");if(response.status>=500||response.status===429)retryPendingScheduleSync();return;}
+      const payload=await response.json();
+      const remote=payload&&typeof payload==="object"?(payload.appointment||payload.break||payload):null;
+      const list=mutation.entity==="appointment"?appointments:breaks;
+      const index=list.findIndex(function(row){return String(row.id)===String(mutation.localId)||String(row.id)===String(mutation.targetId);});
+      if(remote&&remote.id!=null){
+        if(index>=0)list[index]=Object.assign({},list[index],remote);
+        else list.push(remote);
+      }
+      pending=pending.slice(1);
+      writePendingScheduleMutations(pending);
+      persistLocalScheduleCache();
+      renderAll();
+    }
+    if(document.getElementById("saveConfirmationOverlay"))updateSaveConfirmationSync("Синхронізацію завершено.");
+  }finally{scheduleSyncInFlight=false;}
+}
+window.addEventListener("online",syncPendingScheduleMutations);
+function retryPendingScheduleSync(){
+  if(scheduleSyncRetryTimer)clearTimeout(scheduleSyncRetryTimer);
+  scheduleSyncRetryTimer=setTimeout(function(){scheduleSyncRetryTimer=null;syncPendingScheduleMutations();},15000);
 }
 async function loadExpandedMobileSchedule(){
   const loadStart=addDays(periodStart,-1);
@@ -136,12 +237,23 @@ async function loadWeek(fresh){
   fresh=!!fresh;
   if(!fresh){showScheduleStatus("Завантаження розкладу...");startScheduleSlowTimer();}
   try{
+    let localCache=null;
+    try{localCache=JSON.parse(localStorage.getItem(LOCAL_SCHEDULE_CACHE_KEY)||"null");}catch(error){localCache=null;}
+    if(!masterId&&localCache&&localCache.masterId)masterId=localCache.masterId;
+    if(localCache&&String(localCache.masterId)===String(masterId)&&!hasLocalScheduleData){
+      appointments=mergePendingScheduleRows(localCache.appointments||[],readPendingScheduleMutations(),"appointment");
+      breaks=mergePendingScheduleRows(localCache.breaks||[],readPendingScheduleMutations(),"break");
+      hasLocalScheduleData=true;
+      clearScheduleSlowTimer();hideScheduleStatus();renderAll();
+      if(readPendingScheduleMutations().length)setTimeout(syncPendingScheduleMutations,120);
+    }
     if(!masterId){
       const me=await fetchJson("/api/me");
       if(me.master_id) masterId=me.master_id;
       else { const ms=await fetchJson("/api/masters");if(ms.length)masterId=ms[0].id; }
     }
     if(!masterId){hideScheduleStatus();return;}
+    try{localStorage.setItem("salon-board-master-id",String(masterId));}catch(error){}
     if(!window._masterName){
       const me=await fetchJson("/api/me");
       if(me.name){window._masterName=me.name;const b=document.getElementById("masterNameBadge");if(b)b.textContent=me.name;}
@@ -162,6 +274,7 @@ async function loadWeek(fresh){
     const from=days[0],to=days[days.length-1];
     const data=await fetchScheduleRange(masterId,from,to,fresh);
     renderScheduleData(data[0],data[1]);
+    hasLocalScheduleData=true;
     clearScheduleSlowTimer();
     if(useFastMobileLoad){
       didInitialMobileFastLoad=true;
@@ -173,7 +286,7 @@ async function loadWeek(fresh){
     if(!fresh)scheduleBackgroundRefresh();
   }catch(e){
     clearScheduleSlowTimer();
-    if(fresh){hideScheduleStatus();return;}
+    if(fresh||hasLocalScheduleData){hideScheduleStatus();return;}
     showScheduleStatus("Не вдалося завантажити розклад. Спробуйте оновити.",true);
   }
 }
@@ -695,50 +808,36 @@ async function saveAppt(){
     const start=document.getElementById("fTime").value.slice(0,5);
     const body={master_id:masterId,break_date:document.getElementById("fDate").value,start_time:start,end_time:breakEndTime(start,document.getElementById("fDuration").value),label:(document.getElementById("fBreakLabel")||{value:""}).value.trim()||"Зайнято"};
     const url=editingBreakId?`/api/breaks/${editingBreakId}`:"/api/breaks";
-    const res=await fetch(url,{method:editingBreakId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
-    const saved=await res.json();
-    const savedBreak=saved&&typeof saved==="object"?(saved.break||saved):null;
-    if(savedBreak&&savedBreak.id!=null){
-      const index=breaks.findIndex(x=>String(x.id)===String(savedBreak.id));
-      if(index>=0)breaks[index]={...breaks[index],...savedBreak};
-      else breaks.push(savedBreak);
-      renderAll();
-    }
-    closeModal();showToast(editingBreakId?"Оновлено":"Збережено");
+    const wasEdit=editingBreakId!=null;
+    queueScheduleMutation("break",wasEdit?"PUT":"POST",url,body,editingBreakId);
+    closeModal();showSaveConfirmation(wasEdit);
     mobileDay=new Date(body.break_date+"T12:00:00");
     if(isMobileViewport()){
       periodStart=new Date(body.break_date+"T12:00:00");
       weekStart=new Date(periodStart);
       pendingMobileScrollIso=body.break_date;
     }
+    renderAll();
     shouldSmartScrollDesktop=false;
-    loadWeek();
+    setTimeout(syncPendingScheduleMutations,80);
     return;
   }
   const body={master_id:masterId,client_name:document.getElementById("fClient").value.trim(),phone:(document.getElementById("fPhone")||{value:""}).value.trim(),service:selectedServiceIds.map(function(id){var service=services.find(function(item){return Number(item.id)===Number(id);});return service?service.name:"";}).filter(Boolean).join(" + ")||document.getElementById("fService").value.trim(),appt_date:document.getElementById("fDate").value,start_time:document.getElementById("fTime").value.slice(0,5),duration_min:parseInt(document.getElementById("fDuration").value),notes:document.getElementById("fNotes").value.trim(),client_id:selectedClientId||null,status:(document.getElementById("fStatus")||{value:"scheduled"}).value||"scheduled"};
   body.service_ids=selectedServiceIds.slice();
   if(!body.client_name||!body.service){alert("Вкажіть ім\u0027я клієнта та хоча б одну процедуру");return;}
   const url=editingId?`/api/appointments/${editingId}`:"/api/appointments";
-  const res=await fetch(url,{method:editingId?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!res.ok){const e=await res.json();alert(e.detail||"Помилка");return;}
-  const saved=await res.json();
-  const savedAppointment=saved&&typeof saved==="object"?(saved.appointment||saved):null;
-  if(savedAppointment&&savedAppointment.id!=null){
-    const index=appointments.findIndex(x=>String(x.id)===String(savedAppointment.id));
-    if(index>=0)appointments[index]={...appointments[index],...savedAppointment};
-    else appointments.push(savedAppointment);
-    renderAll();
-  }
-  closeModal();showToast(editingId?"Оновлено":"Збережено");
+  const wasEdit=editingId!=null;
+  queueScheduleMutation("appointment",wasEdit?"PUT":"POST",url,body,editingId);
+  closeModal();showSaveConfirmation(wasEdit);
   mobileDay=new Date(body.appt_date+"T12:00:00");
   if(isMobileViewport()){
     periodStart=new Date(body.appt_date+"T12:00:00");
     weekStart=new Date(periodStart);
     pendingMobileScrollIso=body.appt_date;
   }
+  renderAll();
   shouldSmartScrollDesktop=false;
-  loadWeek();
+  setTimeout(syncPendingScheduleMutations,80);
   }finally{
     saveInFlight=false;
     if(saveButton){saveButton.disabled=false;saveButton.removeAttribute("aria-busy");}
