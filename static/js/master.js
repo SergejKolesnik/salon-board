@@ -255,8 +255,13 @@ async function loadWeek(fresh){
     if(!masterId){hideScheduleStatus();return;}
     try{localStorage.setItem("salon-board-master-id",String(masterId));}catch(error){}
     if(!window._masterName){
-      const me=await fetchJson("/api/me");
-      if(me.name){window._masterName=me.name;const b=document.getElementById("masterNameBadge");if(b)b.textContent=me.name;}
+      try{
+        const me=await fetchJson("/api/me");
+        if(me.name){window._masterName=me.name;const b=document.getElementById("masterNameBadge");if(b)b.textContent=me.name;try{localStorage.setItem("salon-board-master-name",me.name);}catch(error){}}
+      }catch(error){
+        try{window._masterName=localStorage.getItem("salon-board-master-name")||"";}catch(storageError){}
+        if(!hasLocalScheduleData)throw error;
+      }
     }
     (function(){
       const now=new Date();
@@ -265,7 +270,12 @@ async function loadWeek(fresh){
       const btn=document.getElementById("todayBtn");
       if(btn) btn.innerHTML="&#128197; "+days[now.getDay()]+", "+now.getDate()+" "+months[now.getMonth()];
     })();
-    if(!services.length){services=await fetchJson("/api/services");updateDatalist();}
+    if(!services.length){
+      try{const cachedServices=JSON.parse(localStorage.getItem("salon-board-services-v1")||"[]");if(Array.isArray(cachedServices))services=cachedServices;}catch(error){}
+      if(services.length)updateDatalist();
+      try{services=await fetchJson("/api/services");updateDatalist();try{localStorage.setItem("salon-board-services-v1",JSON.stringify(services));}catch(error){}}
+      catch(error){if(!services.length)console.warn("Using cached schedule without a refreshed service list",error);}
+    }
     const isMobile=isMobileViewport();
     const useFastMobileLoad=isMobile&&!didInitialMobileFastLoad;
     const loadDays=useFastMobileLoad?3:(isMobile?14:viewDays);
